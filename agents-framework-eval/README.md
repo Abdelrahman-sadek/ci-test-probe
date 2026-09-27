@@ -116,6 +116,26 @@ regression tests), all examples run, and every probe above now comes out safe.
 One existing test changed: the HTTP-tool test used to replace the global `fetch`. The pinned transport
 deliberately doesn't use it, so the test now passes the new `defineHttpTool({ fetchImpl })` option.
 
+## Database verification of `claim()` (after merge)
+
+`db-claim-check.ts` runs the merged code against **real PostgreSQL 16.13** (two independent
+connection pools) and **SQLite** via `node:sqlite` (two connections to one file). All checks passed
+in three consecutive runs:
+
+| Check | PostgreSQL | SQLite |
+| --- | --- | --- |
+| Claim WAITING→RUNNING succeeds; second claim and missing run fail | PASS | PASS |
+| `status` column and the status in the JSON state both updated | PASS | PASS |
+| 25 concurrent claims across two connections → exactly 1 winner | PASS | PASS |
+| **Two separate runtimes** (like two servers, so the per-process lock can't help) resume the same approval at once → tool runs **once**, the other gets "already being resumed" | PASS | PASS |
+| Run ends `COMPLETED` in the database | PASS | PASS |
+
+Both runtimes won the race at least once across the runs, so each side was tested as winner and as loser.
+
+To re-run it: start Postgres on socket `/tmp/pgtest` port 5433, `npm i pg@8` in a folder outside the
+repo (set the `createRequire` path in the script), copy the script into `examples/`, then
+`npx tsx --tsconfig tsconfig.dev.json examples/db-claim-check.ts`.
+
 ## Reproduce
 
 ```bash
