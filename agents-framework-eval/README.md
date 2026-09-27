@@ -98,11 +98,30 @@ to adopt for its tool runtime, approvals, and limits. Before production, fix or 
 set `idempotency` on every side-effecting tool, route egress through a proxy that pins the resolved
 IP, and constrain `commandTool` arguments.
 
+## Fixes (`fixes.patch`)
+
+All six findings are fixed in `fixes.patch` (applies to upstream `d62cbd5` with `git am`).
+After the patch: typecheck and lint are clean, **304/304 tests pass** (281 original + 23 new
+regression tests), all examples run, and every probe above now comes out safe.
+
+| # | Fix |
+| --- | --- |
+| 1 | `isPrivateAddress` expands IPv6 to 8 groups and checks the IPv4 embedded in mapped, translated, compatible, NAT64 and 6to4 addresses. It blocks Teredo, site-local, multicast and documentation ranges, adds the missing IPv4 reserved ranges, and refuses addresses it can't parse. |
+| 2 | By default, `safeFetch` now uses a `node:http(s)` transport whose `lookup` re-checks each resolved address when the socket connects, so the address that was checked is the one used. The new `EgressPolicy.allowsAddress()` keeps `allowPrivateNetworks` working. A custom `fetchImpl` is still allowed but is documented as unpinned. |
+| 3 | New optional `RunStateStore.claim(runId, from, to)` does an atomic status compare-and-set. It is implemented for the in-memory, Postgres (`UPDATE … WHERE status = $2 RETURNING`) and SQLite stores. `resume()` claims the run before running approved tools, and a per-process lock covers stores without `claim()`. A losing concurrent resume fails with "already being resumed". |
+| 4 | `commandTool` treats path-like arguments, and the values of allowed `--flag=value` arguments, as workspace paths. Absolute paths, `..` escapes, symlink escapes and `~` are rejected. It can be turned off with `confinePaths: false`. |
+| 5 | Injection detection normalizes text first (Unicode normal form, zero-width characters, s p a c e d letters). It adds patterns for reversed word order, rule injection ("new rule:", "from now on you must obey") and es/pt/fr/de/it/ar phrasings. Each signal counts once. False-positive tests were added. |
+| 6 | PII detection accepts dotted card numbers, space-separated SSNs (never-issued area numbers excluded) and IBANs in any case, compact or grouped, confirmed by the ISO 13616 mod-97 checksum. |
+
+One existing test changed: the HTTP-tool test used to replace the global `fetch`. The pinned transport
+deliberately doesn't use it, so the test now passes the new `defineHttpTool({ fetchImpl })` option.
+
 ## Reproduce
 
 ```bash
 git clone https://github.com/agent-farmework/agents-framework && cd agents-framework
 corepack enable && pnpm install && pnpm check && pnpm examples
 cp <this-repo>/agents-framework-eval/probe.test.ts packages/security/src/zz-probe.test.ts
-npx vitest run --project security zz-probe   # prints PROBE lines
+npx vitest run --project security zz-probe   # prints PROBE lines (before the fix)
+git am <this-repo>/agents-framework-eval/fixes.patch && pnpm check   # after the fix
 ```
