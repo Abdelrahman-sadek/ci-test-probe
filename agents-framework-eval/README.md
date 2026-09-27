@@ -100,7 +100,7 @@ IP, and constrain `commandTool` arguments.
 
 ## Fixes (`fixes.patch`)
 
-All six findings are fixed in `fixes.patch` (applies to upstream `d62cbd5` with `git am`).
+All six findings are fixed. **Merged upstream in [agent-farmework/agents-framework#6](https://github.com/agent-farmework/agents-framework/pull/6)** (2026-09-27); `fixes.patch` is kept for reference (applies to `d62cbd5` with `git am`).
 After the patch: typecheck and lint are clean, **304/304 tests pass** (281 original + 23 new
 regression tests), all examples run, and every probe above now comes out safe.
 
