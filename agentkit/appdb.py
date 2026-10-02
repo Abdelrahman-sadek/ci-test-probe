@@ -28,8 +28,18 @@ CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, ts REAL, title TEXT, bod
 CREATE TABLE IF NOT EXISTS tickets(id TEXT PRIMARY KEY, ts REAL, user TEXT, kind TEXT, status TEXT,
                                    routed_to TEXT, payload TEXT);
 CREATE INDEX IF NOT EXISTS turns_conv ON turns(conversation);
+CREATE TABLE IF NOT EXISTS answers(id TEXT PRIMARY KEY, ts REAL, user TEXT, question TEXT, mode TEXT, agent TEXT,
+                                   lang TEXT, cached INTEGER, degraded TEXT, guard TEXT, sources TEXT, trace TEXT,
+                                   ms REAL);
+CREATE INDEX IF NOT EXISTS answers_ts ON answers(ts);
+CREATE TABLE IF NOT EXISTS llm_usage(id INTEGER PRIMARY KEY, ts REAL, model TEXT, plugin TEXT, agent TEXT,
+                                     purpose TEXT, input INTEGER, output INTEGER, cache_read INTEGER,
+                                     cache_write INTEGER, cost REAL);
+CREATE INDEX IF NOT EXISTS usage_ts ON llm_usage(ts);
+CREATE TABLE IF NOT EXISTS budget_alerts(period TEXT, threshold INTEGER, ts REAL, PRIMARY KEY(period, threshold));
+CREATE TABLE IF NOT EXISTS admin_actions(id INTEGER PRIMARY KEY, ts REAL, actor TEXT, action TEXT, detail TEXT);
 """
-RETENTION_TABLES = ("feedback", "unanswered", "conversations", "saved", "tickets")
+RETENTION_TABLES = ("feedback", "unanswered", "conversations", "saved", "tickets", "answers")
 
 
 class AppDB:
@@ -215,9 +225,63 @@ class AppDB:
         with self.lock, self.db:
             for (cid,) in self.db.execute("SELECT id FROM conversations WHERE user=?", (pid,)).fetchall():
                 removed += self.db.execute("DELETE FROM turns WHERE conversation=?", (cid,)).rowcount
-            for table in ("conversations", "saved", "feedback", "unanswered", "tickets"):
+            for table in ("conversations", "saved", "feedback", "unanswered", "tickets", "answers"):
                 removed += self.db.execute(f"DELETE FROM {table} WHERE user=?", (pid,)).rowcount  # nosec B608 — fixed names
         return removed
+
+    # Answers, model usage, budget alerts, staff audit trail (dashboard data)
+    def add_answer(self, question: str, ans: dict, user: str = "", cached: bool = False, ms: float = 0.0):
+        self._exec("INSERT OR REPLACE INTO answers VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (ans["id"], time.time(), pseudonym(user) if user else "", self._enc(redact(question)),
+                    ans["mode"], ans["agent"], ans["lang"], int(cached), ans.get("degraded", ""), ans.get("guard", ""),
+                    json.dumps([s["title"] for s in ans.get("sources", [])], ensure_ascii=False),
+                    json.dumps(ans.get("trace", [])), round(ms, 1)))
+
+    def answers(self, since: float = 0, until: float | None = None, limit: int = 200, mode: str = "",
+                agent: str = "", lang: str = "") -> list[dict]:
+        rows = self.db.execute("SELECT id, ts, question, mode, agent, lang, cached, degraded, guard, sources, trace, ms "
+                               "FROM answers WHERE ts >= ? AND ts <= ? AND (?='' OR mode=?) AND (?='' OR agent=?) "
+                               "AND (?='' OR lang=?) ORDER BY ts DESC LIMIT ?",
+                               (since, until or time.time() + 1, mode, mode, agent, agent, lang, lang, limit))
+        return [{"id": i, "ts": ts, "question": self._dec(q), "mode": m, "agent": a, "lang": la, "cached": bool(c),
+                 "degraded": d, "guard": g, "sources": json.loads(so), "trace": json.loads(tr), "ms": ms}
+                for i, ts, q, m, a, la, c, d, g, so, tr, ms in rows]
+
+    def add_usage(self, model: str, tokens: dict, cost: float, labels: dict):
+        self._exec("INSERT INTO llm_usage(ts, model, plugin, agent, purpose, input, output, cache_read, cache_write, "
+                   "cost) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                   (time.time(), model, labels.get("plugin", "other"), labels.get("agent", ""),
+                    labels.get("purpose", "other"), tokens.get("input", 0), tokens.get("output", 0),
+                    tokens.get("cache_read", 0), tokens.get("cache_write", 0), cost))
+
+    def spend(self, since: float) -> float:
+        return self.db.execute("SELECT COALESCE(SUM(cost), 0) FROM llm_usage WHERE ts >= ?", (since,)).fetchone()[0]
+
+    def usage_breakdown(self, since: float, by: str) -> list[dict]:
+        if by not in ("plugin", "purpose", "agent", "model"):
+            raise ValueError(by)
+        rows = self.db.execute(f"SELECT {by}, COUNT(*), SUM(input), SUM(output), SUM(cost) FROM llm_usage "  # nosec B608 — allowlisted column
+                               f"WHERE ts >= ? GROUP BY {by} ORDER BY SUM(cost) DESC", (since,))
+        return [{by: k, "calls": n, "input": i or 0, "output": o or 0, "cost": round(c or 0, 6)} for k, n, i, o, c in rows]
+
+    def daily_spend(self, days: int = 30) -> list[dict]:
+        since = time.time() - days * 86400
+        rows = self.db.execute("SELECT date(ts, 'unixepoch'), SUM(cost) FROM llm_usage WHERE ts >= ? "
+                               "GROUP BY 1 ORDER BY 1", (since,))
+        return [{"day": d, "cost": round(c, 6)} for d, c in rows]
+
+    def alert_once(self, period: str, threshold: int) -> bool:
+        """True the first time a budget threshold is crossed in a period (e.g. 'day:2026-10-02', 80)."""
+        cur = self._exec("INSERT OR IGNORE INTO budget_alerts VALUES (?,?,?)", (period, threshold, time.time()))
+        return cur.rowcount > 0
+
+    def log_action(self, actor: str, action: str, detail: str = ""):
+        self._exec("INSERT INTO admin_actions(ts, actor, action, detail) VALUES (?,?,?,?)",
+                   (time.time(), pseudonym(actor) if actor else "api-key", action, redact(detail)[:300]))
+
+    def actions(self, limit: int = 100) -> list[dict]:
+        return [{"ts": ts, "actor": a, "action": ac, "detail": d} for ts, a, ac, d in self.db.execute(
+            "SELECT ts, actor, action, detail FROM admin_actions ORDER BY ts DESC LIMIT ?", (limit,))]
 
     # Retention
     def purge(self, now: float | None = None, days: int | None = None) -> int:

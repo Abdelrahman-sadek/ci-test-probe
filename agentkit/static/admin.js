@@ -37,7 +37,6 @@ async function load() {
       li.append(b); ul.append(li);
     }
     if (!ul.children.length) ul.append(Object.assign(document.createElement("li"), {textContent: "Nothing to review."}));
-    $("stats").textContent = JSON.stringify(await api("/admin/api/stats"), null, 2);
   } catch (e) { say("Sign in or enter the admin key to see staff data (" + e.message + ")."); }
 }
 function li(text) { const x = document.createElement("li"); x.textContent = text; return x; }

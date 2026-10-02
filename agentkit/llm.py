@@ -259,9 +259,18 @@ class ResilientLLM(LLM):
             self._day, self._day_start_cost = today, total
         return total - self._day_start_cost
 
+    monitor = None  # BudgetMonitor: persistent spend and alerts (wired by make_chat)
+
+    @property
+    def brake(self) -> bool:
+        """Near the budget: skip optional calls (grading, rewriting, critic) before answers degrade."""
+        return bool(self.monitor and self.monitor.brake())
+
     def status(self) -> str:
         import time
-        if self.budget is not None and self._cost_today() >= self.budget:
+        if self.monitor is not None and self.monitor.over():
+            return "budget"
+        if self.monitor is None and self.budget is not None and self._cost_today() >= self.budget:
             return "budget"
         if time.monotonic() < self.open_until:
             return "outage"

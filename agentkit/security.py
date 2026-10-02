@@ -81,6 +81,12 @@ class Principal:
     groups: list[str] = field(default_factory=list)
     access: tuple[str, ...] = ("public",)
     admin: bool = False
+    staff: bool = False   # library staff: dashboard plus knowledge and service actions
+    viewer: bool = False  # read-only dashboard (overview and quality)
+
+    @property
+    def role(self) -> str:
+        return "admin" if self.admin else "staff" if self.staff else "viewer" if self.viewer else ""
 
     @property
     def key(self) -> str:
@@ -108,8 +114,15 @@ def _admin_groups() -> set[str]:
     return {g.strip() for g in os.getenv("AGENTKIT_ADMIN_GROUPS", "library-staff-admin").split(",") if g.strip()}
 
 
+def _groups_env(name: str, default: str) -> set[str]:
+    return {g.strip() for g in os.getenv(name, default).split(",") if g.strip()}
+
+
 def make_principal(user: str, groups: list[str], admin: bool = False) -> Principal:
-    return Principal(user, groups, access_for(groups), admin or bool(_admin_groups() & set(groups)))
+    g = set(groups)
+    return Principal(user, groups, access_for(groups), admin or bool(_admin_groups() & g),
+                     bool(_groups_env("AGENTKIT_STAFF_GROUPS", "library-staff") & g),
+                     bool(_groups_env("AGENTKIT_VIEWER_GROUPS", "") & g))
 
 
 def verify_jwt(token: str) -> Principal:

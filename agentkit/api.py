@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
@@ -178,6 +179,15 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
             raise HTTPException(403, "admin only")
         return who
 
+    def staff(who: Principal = Depends(principal)) -> Principal:
+        if not (who.admin or who.staff):
+            raise HTTPException(403, "library staff only")
+        return who
+
+    def audit(who: Principal, action: str, detail: str = ""):
+        if appdb is not None:
+            appdb.log_action(who.user, action, detail)
+
     # Pages and static assets
     @app.get("/", response_class=HTMLResponse)
     @app.get("/embed", response_class=HTMLResponse)
@@ -260,7 +270,9 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
     @app.get("/api/me/data")
     def export_my_data(who: Principal = Depends(principal)):
         """Data-subject access request: everything stored about the signed-in user, as JSON."""
-        return need(appdb).export_user(signed_in(who))
+        data = need(appdb).export_user(signed_in(who))
+        audit(who, "data-export")
+        return data
 
     @app.delete("/api/me/data")
     def delete_my_data(who: Principal = Depends(principal)):
@@ -269,6 +281,7 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
         removed = need(appdb).delete_user(user)
         if chat.log is not None:
             removed += chat.log.purge(user=user)
+        appdb.log_action("", "data-erase", f"{removed} rows")  # no identity kept for an erasure
         return {"deleted_rows": removed}
 
     @app.post("/api/feedback")
@@ -389,12 +402,13 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
                 "workload": appdb.workload() if appdb else None}
 
     @app.get("/admin/api/freshness")
-    def freshness_report(_: Principal = Depends(admin)):
+    def freshness_report(_: Principal = Depends(staff)):
         from .rag import freshness
         return freshness(chat.index, appdb)
 
     @app.post("/admin/api/upload")
-    def upload(body: UploadIn, _: Principal = Depends(admin)):
+    def upload(body: UploadIn, who: Principal = Depends(staff)):
+        audit(who, "upload", body.filename)
         if jobs is None:
             raise HTTPException(503, "ingestion jobs are not enabled")
         name = re.sub(r"[^A-Za-z0-9._-]", "-", Path(body.filename).name).strip(".-")[:120] or "upload"
@@ -415,52 +429,105 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
         return {"job": jobs.submit([str(dest)], review=False), "file": name}
 
     @app.get("/admin/api/jobs/{jid}")
-    def job(jid: str, _: Principal = Depends(admin)):
+    def job(jid: str, _: Principal = Depends(staff)):
         if jobs is None or not (j := jobs.get(jid)):
             raise HTTPException(404)
         return j
 
     @app.get("/admin/api/feedback")
-    def feedback_report(_: Principal = Depends(admin)):
+    def feedback_report(_: Principal = Depends(staff)):
         return need(appdb).feedback_report()
 
     @app.get("/admin/api/eval-candidates")
-    def eval_candidates(_: Principal = Depends(admin)):
+    def eval_candidates(_: Principal = Depends(staff)):
         return need(appdb).eval_candidates()
 
     @app.get("/admin/api/notices")
-    def list_notices(_: Principal = Depends(admin)):
+    def list_notices(_: Principal = Depends(staff)):
         return need(appdb).notices(include_expired=True)
+
+    @app.get("/admin/api/role")
+    def my_role(who: Principal = Depends(principal)):
+        from .dashboard import TABS, allowed
+        return {"role": who.role, "tabs": [t for t in TABS if allowed(who.role, t)]}
+
+    @app.get("/admin/api/dashboard/{name}")
+    def dashboard_tab(name: str, days: int = Query(30, ge=1, le=365), mode: str = "", agent: str = "",
+                      lang: str = "", who: Principal = Depends(principal)):
+        from .dashboard import TABS, allowed, tab
+        if name not in TABS:
+            raise HTTPException(404, "unknown tab")
+        if not allowed(who.role, name):
+            raise HTTPException(403, "your role cannot open this tab")
+        need(appdb)
+        if name == "conversations":
+            audit(who, "view-conversations", f"{days}d {mode} {agent} {lang}".strip())
+        now = time.time()
+        return tab(chat, name, now - days * 86400, now, mode=mode, agent=agent, lang=lang,
+                   index_path=getattr(jobs, "save_path", ""))
+
+    @app.post("/admin/api/gaps/{cid}/ticket")
+    def gap_ticket(cid: str, who: Principal = Depends(staff)):
+        from .arabic import detect_lang
+        from .gaps import detect
+        c = next((c for c in detect(need(appdb), chat.index, expand=lambda q: chat._expand(q, detect_lang(q)))
+                  ["clusters"] if c["id"] == cid), None)
+        if not c:
+            raise HTTPException(404, "unknown gap")
+        audit(who, "gap-ticket", c["label"])
+        return {"ticket": appdb.add_ticket("content-gap", {"question": c["label"], "examples": c["examples"],
+                                                           "gap_kind": c["kind"], "nearest": c["nearest"]}, c["owner"])}
+
+    @app.post("/admin/api/gaps/{cid}/candidate")
+    def gap_candidate(cid: str, who: Principal = Depends(staff)):
+        from .arabic import detect_lang
+        from .gaps import detect
+        c = next((c for c in detect(need(appdb), chat.index, expand=lambda q: chat._expand(q, detect_lang(q)))
+                  ["clusters"] if c["id"] == cid), None)
+        if not c:
+            raise HTTPException(404, "unknown gap")
+        path = Path(os.getenv("AGENTKIT_EVAL_CANDIDATES", "data/eval-candidates.md"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            for q in c["examples"]:
+                f.write(f"| gap-{cid} | {c['languages'] and max(c['languages'], key=c['languages'].get)} | "
+                        f"{q.replace('|', '/')} | | answer | | |\n")
+        audit(who, "gap-candidate", c["label"])
+        return {"appended": len(c["examples"]), "file": str(path)}
 
     @app.get("/admin/api/maintenance")
     def get_maintenance(_: Principal = Depends(admin)):
         return {"maintenance": chat.maintenance}
 
     @app.post("/admin/api/maintenance")
-    def set_maintenance(body: MaintenanceIn, _: Principal = Depends(admin)):
+    def set_maintenance(body: MaintenanceIn, who: Principal = Depends(admin)):
+        audit(who, "maintenance", "on" if body.on else "off")
         """Kill switch: every question gets a librarian handoff instead of a generated answer."""
         chat.maintenance = body.on
         log.warning("maintenance mode %s by admin", "on" if chat.maintenance else "off")
         return {"maintenance": chat.maintenance}
 
     @app.post("/admin/api/notices")
-    def add_notice(body: NoticeIn, _: Principal = Depends(admin)):
+    def add_notice(body: NoticeIn, who: Principal = Depends(staff)):
+        audit(who, "notice-add", body.title)
         return {"id": need(appdb).add_notice(**body.model_dump())}
 
     @app.delete("/admin/api/notices/{nid}")
-    def delete_notice(nid: str, _: Principal = Depends(admin)):
+    def delete_notice(nid: str, who: Principal = Depends(staff)):
+        audit(who, "notice-delete", nid)
         return {"deleted": need(appdb).delete_notice(nid)}
 
     @app.get("/admin/api/tickets")
-    def tickets(kind: str | None = None, _: Principal = Depends(admin)):
+    def tickets(kind: str | None = None, _: Principal = Depends(staff)):
         return need(appdb).tickets(kind)
 
     @app.post("/admin/api/tickets/{tid}")
-    def ticket_status(tid: str, body: StatusIn, _: Principal = Depends(admin)):
+    def ticket_status(tid: str, body: StatusIn, who: Principal = Depends(staff)):
+        audit(who, "ticket-status", f"{tid} → {body.status}")
         return {"updated": need(appdb).set_ticket_status(tid, body.status)}
 
     @app.get("/admin/api/corrections")
-    def corrections(_: Principal = Depends(admin)):
+    def corrections(_: Principal = Depends(staff)):
         out = []
         for origin, entry in chat.index.manifest().items():
             for low in entry.get("low_confidence_pages", []):
@@ -469,7 +536,8 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
         return out
 
     @app.post("/admin/api/corrections")
-    def correct(body: CorrectionIn, _: Principal = Depends(admin)):
+    def correct(body: CorrectionIn, who: Principal = Depends(staff)):
+        audit(who, "ocr-correction", f"{body.origin} p{body.page}")
         if body.origin not in chat.index.manifest() or jobs is None:
             raise HTTPException(404, "unknown source or jobs disabled")
         side = Path(body.origin + ".corrections.json")
@@ -479,12 +547,13 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
         return {"job": jobs.submit([body.origin], review=False, force=True)}
 
     @app.get("/admin/api/review")
-    def review(_: Principal = Depends(admin)):
+    def review(_: Principal = Depends(staff)):
         return {o: e for o, e in chat.index.manifest().items() if e.get("status") == "pending"}
 
     @app.post("/admin/api/approve")
-    def approve_sources(body: ApproveIn, _: Principal = Depends(admin)):
+    def approve_sources(body: ApproveIn, who: Principal = Depends(staff)):
         done = approve(chat.index, body.origin)
+        audit(who, "approve", ", ".join(done))
         if jobs is not None:
             chat.index.save(jobs.save_path)
         return {"approved": done}

@@ -18,7 +18,7 @@ from .agents import load_all
 from .arabic import detect_lang, franco_to_arabic, normalize, sentences, stem_ar, tokenize, words
 from .cache import AnswerCache
 from .llm import LLM, Grounded
-from .metrics import METRICS
+from .metrics import METRICS, usage_scope
 from .ocr import LOW_CONFIDENCE
 from .rag import BaseIndex, Chunk
 from .security import SecureLog, pseudonym, redact
@@ -287,6 +287,7 @@ class LibraryChat:
         self.index, self.llm, self.k, self.access = index, llm, k, access
         self.catalog, self.cache = catalog, cache
         self.maintenance = os.getenv("AGENTKIT_MAINTENANCE") == "1"  # also toggled from the staff page
+        self.budget = None  # BudgetMonitor, attached by make_chat when AppDB is on
         self.appdb, self.libcal, self.account = appdb, libcal, account
         self.log = SecureLog(log_path) if log_path else None
         self.agents = load_all()
@@ -321,6 +322,14 @@ class LibraryChat:
             n += 1
         return n
 
+    def _plugin(self, agent: str) -> str:
+        a = self.agents.get(agent)
+        return a.division if a else "chat"
+
+    def _optional_calls(self) -> bool:
+        """Grade/rewrite/critic model calls: live only, and paused by the budget soft brake."""
+        return self.llm.live and not getattr(self.llm, "brake", False)
+
     def _retrieve(self, query: str, expansions: list[str], access: tuple) -> list:
         """Hybrid search plus the relevance gate: a chunk must support enough of the question's concepts."""
         specific = set(tokenize(" ".join([query, *expansions]))) - GENERIC
@@ -343,7 +352,7 @@ class LibraryChat:
     def _rewrite(self, query: str, lang: str) -> str:
         """One retry with a better query. Live: a fast model rewrites it. Offline: spelling is corrected against
         the index vocabulary and Franco-Arabic is transliterated."""
-        if self.llm.live:
+        if self._optional_calls():
             out = self.llm.complete(REWRITE_PROMPT, redact(query), fast=True, max_tokens=60).strip()
             return out.splitlines()[0][:300] if out else query
         vocab = self.index.vocabulary()
@@ -370,7 +379,9 @@ class LibraryChat:
     def _prepare(self, question: str, history: list[dict] | None, access: tuple):
         """Everything before generation. Returns ("final", Answer) or ("generate", context dict)."""
         trace = Trace()
-        kind, out = self._plan(question, history, access, trace)
+        agent = route(question)
+        with usage_scope(agent=agent, plugin=self._plugin(agent), purpose="answer"):
+            kind, out = self._plan(question, history, access, trace)
         if kind == "final":
             out.trace = out.trace or trace.steps
         else:
@@ -408,15 +419,17 @@ class LibraryChat:
             t1 = time.perf_counter()
             hits = self._retrieve(query, expansions if attempt == 1 else self._expand(query, lang), access)
             trace.step("retrieve", t1, attempt=attempt, results=len(hits))
-            if hits and self.llm.live and os.getenv("AGENTKIT_GRADE", "1") == "1":
+            if hits and self._optional_calls() and os.getenv("AGENTKIT_GRADE", "1") == "1":
                 t1 = time.perf_counter()
-                kept = self._grade(redact(question), hits)
+                with usage_scope(purpose="grade"):
+                    kept = self._grade(redact(question), hits)
                 trace.step("grade", t1, kept=len(kept), dropped=len(hits) - len(kept))
                 METRICS.inc("agentkit_grade_dropped_total", len(hits) - len(kept))
                 hits = kept
             if not hits and attempt < attempts:
                 t1 = time.perf_counter()
-                rewritten = self._rewrite(query, lang)
+                with usage_scope(purpose="rewrite"):
+                    rewritten = self._rewrite(query, lang)
                 trace.step("rewrite", t1, changed=rewritten != query)
                 if rewritten == query:
                     break
@@ -465,6 +478,7 @@ class LibraryChat:
         if any(c.method.startswith("ocr") and c.confidence < LOW_CONFIDENCE for _, c in cited):
             ans.notes.append("Part of this answer comes from a scanned page that staff have not checked yet; "
                              "please confirm it against the scan.")
+            trace.step("unchecked_scan", time.perf_counter())
         if ans.notes:
             ans.text += "\n\n" + " ".join(ans.notes)
         ans.trace = trace.steps
@@ -555,8 +569,9 @@ class LibraryChat:
         live = kind == "generate" and payload.get("live")
         if kind == "generate":
             t1 = time.perf_counter()
-            payload = self._finish(payload, self.llm.answer(payload["system"], payload["asked"],
-                                                            _sources(payload["hits"])))
+            with usage_scope(agent=payload["agent"], plugin=self._plugin(payload["agent"]), purpose="answer"):
+                grounded = self.llm.answer(payload["system"], payload["asked"], _sources(payload["hits"]))
+            payload = self._finish(payload, grounded)
             METRICS.observe("agentkit_stage_seconds", time.perf_counter() - t1, stage="generate")
         elif payload.mode in ("handoff", "strategy"):
             payload = self._with_actions(payload, question)
@@ -584,7 +599,14 @@ class LibraryChat:
             yield "delta", payload.text
             yield "done", self._record(question, payload, t0, user)
             return
-        for event, data in self.llm.stream_answer(payload["system"], payload["asked"], _sources(payload["hits"])):
+        stream = self.llm.stream_answer(payload["system"], payload["asked"], _sources(payload["hits"]))
+        labels = {"agent": payload["agent"], "plugin": self._plugin(payload["agent"]), "purpose": "answer"}
+        while True:
+            with usage_scope(**labels):  # set and reset around each step: never across a yield
+                step = next(stream, None)
+            if step is None:
+                break
+            event, data = step
             if event == "delta":
                 yield "delta", data
             else:
@@ -597,6 +619,11 @@ class LibraryChat:
         METRICS.inc("agentkit_requests_total", mode=ans.mode)
         if self.appdb and ans.mode in ("handoff", "strategy") and not cached:
             self.appdb.add_unanswered(question, ans.mode, ans.lang, ans.agent, user)
+        if self.appdb and ans.mode != "account":  # dashboard data; account answers hold personal data
+            try:
+                self.appdb.add_answer(question, ans.to_dict(), user, cached, (time.perf_counter() - t0) * 1000)
+            except Exception:  # noqa: BLE001 — analytics never breaks an answer
+                pass
         METRICS.observe("agentkit_stage_seconds", time.perf_counter() - t0, stage="total")
         if self.log and ans.mode != "account":  # account answers contain personal data: never logged
             self.log.write({"ts": int(time.time()), "user": pseudonym(user), "q": redact(question),

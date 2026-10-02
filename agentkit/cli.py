@@ -66,9 +66,14 @@ def make_chat(index_path: str = DEFAULT_INDEX, llm=None) -> LibraryChat:
     from .connectors import AlmaAccount, LibCal
     cache = None if os.getenv("AGENTKIT_CACHE") == "0" else AnswerCache()
     appdb = None if os.getenv("AGENTKIT_APP_DB") == "off" else AppDB()
-    return LibraryChat(open_index(index_path), llm or get_llm(), catalog=PrimoCatalog.from_env(),
+    llm = llm or get_llm()
+    chat = LibraryChat(open_index(index_path), llm, catalog=PrimoCatalog.from_env(),
                        log_path=os.getenv("AGENTKIT_LOG") or None, cache=cache, appdb=appdb,
                        libcal=LibCal.from_env(), account=AlmaAccount.from_env())
+    if appdb is not None:
+        from .budget import attach
+        chat.budget = attach(llm, appdb)
+    return chat
 
 
 def main(argv=None):
