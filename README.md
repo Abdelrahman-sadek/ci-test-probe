@@ -1,4 +1,10 @@
-<div align="center">
+<div align="center"><p align="center"><img src="docs/screenshots/architecture.png" alt="Architecture: request path from user through Caddy, guardrails, routing, semantic cache, hybrid search, grading, the model and the evaluator-critic; ingestion pipeline into the index; AppDB feeding the staff dashboard" width="760"></p>
+
+<details><summary>Diagram source (Mermaid; renders on github.com)</summary>
+
+
+
+</details>
 
 # AUC Library Assistant & Agent Kit
 
