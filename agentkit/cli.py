@@ -90,6 +90,16 @@ def _main(argv=None):
     s.add_argument("--force", action="store_true", help="re-parse files even if unchanged")
     s.add_argument("--review", action="store_true", help="hold changed sources for staff approval")
     s.add_argument("--contextualize", choices=["sync", "batch"], help="Contextual Retrieval (live mode)")
+    s.add_argument("--workers", type=int, default=1, help="parse files in parallel (large archives)")
+    sub.add_parser("tickets-check", help="escalate handoff tickets past the SLA (run from cron)")
+    sub.add_parser("freshness", help="stale sources and notices about to expire")
+    sub.add_parser("snapshots", help="list index snapshots")
+    s = sub.add_parser("rollback", help="restore an index snapshot (default: the newest)")
+    s.add_argument("name", nargs="?")
+    s = sub.add_parser("export-searchable", help="add an invisible OCR text layer to a scanned PDF")
+    s.add_argument("path")
+    s.add_argument("-o", "--output", required=True)
+    sub.add_parser("pilot-report", help="pilot metrics: deflection, handoffs, satisfaction, SLA")
     sub.add_parser("review", help="list sources waiting for approval")
     s = sub.add_parser("approve", help="release sources held for review")
     s.add_argument("origin", nargs="?", help="one source path (default: all pending)")
@@ -111,6 +121,7 @@ def _main(argv=None):
     s.add_argument("--json", default="data/eval-report.json")
     s.add_argument("--min-pass", type=float, default=0.0)
     s.add_argument("--min-recall", type=float, default=0.0)
+    s.add_argument("--set", default="golden", choices=["golden", "dev", "heldout"], help="question set")
     s = sub.add_parser("test-agents", help="smoke-test every agent (live mode grades replies)")
     s.add_argument("--out", default="data/agents-report.md")
     s = sub.add_parser("serve", help="web chat UI + JSON API")
@@ -135,8 +146,9 @@ def _main(argv=None):
         if a.fresh and Path(a.index).exists():
             Path(a.index).unlink()
         base = open_index(a.index, create=True)
+        base.snapshot(a.index)
         index, report = ingest(a.paths, llm, base, contextualize=a.contextualize or False, review=a.review,
-                               force=a.force)
+                               force=a.force, workers=a.workers, checkpoint=lambda ix: ix.save(a.index))
         index.save(a.index)
         for r in report:
             q = f" ⚠ {r['quarantined']} quarantined (prompt injection)" if r["quarantined"] else ""
@@ -156,7 +168,60 @@ def _main(argv=None):
         from .accessible import export_html
         Path(a.output).write_text(export_html(a.path, llm), encoding="utf-8")
         print(f"Wrote {a.output}")
-    elif a.cmd == "feedback-report":
+    elif a.cmd == "tickets-check":
+        from .appdb import AppDB
+        from .services import Handoff, escalate_overdue
+        db = AppDB()
+        done = escalate_overdue(db, Handoff(db))
+        print(f"Escalated {len(done)} overdue ticket(s): {', '.join(done) or '-'}")
+    elif a.cmd == "freshness":
+        from .appdb import AppDB
+        from .rag import freshness
+        rep = freshness(open_index(a.index), AppDB())
+        for s_ in rep["stale_sources"]:
+            print(f"STALE  {s_['days']:>4} days  {s_['url'] or s_['origin']}")
+        for n in rep["expiring_notices"]:
+            print(f"NOTICE expires {n['valid_to']}  {n['title']}")
+        print(f"{len(rep['stale_sources'])} stale source(s), {len(rep['expiring_notices'])} expiring notice(s).")
+    elif a.cmd in ("snapshots", "rollback"):
+        d = Path(a.index + ".snapshots")
+        snaps = sorted(d.iterdir()) if d.exists() else []
+        if a.cmd == "snapshots":
+            print("\n".join(p_.name for p_ in snaps) or "No snapshots yet.")
+        else:
+            pick = next((p_ for p_ in snaps if p_.name == a.name), None) if a.name else (snaps[-1] if snaps else None)
+            if not pick:
+                raise SetupError("snapshot not found")
+            data = pick.read_bytes()  # read first: the safety snapshot below may prune the oldest file
+            try:  # the current state stays recoverable
+                open_index(a.index, create=True).snapshot(a.index)
+            except Exception:  # noqa: BLE001 — a corrupt index is the usual reason to roll back; keep its bytes
+                if Path(a.index).exists():
+                    Path(a.index + ".corrupt").write_bytes(Path(a.index).read_bytes())
+            Path(a.index).write_bytes(data)
+            for ext in ("-wal", "-shm"):
+                Path(a.index + ext).unlink(missing_ok=True)
+            print(f"Restored {pick.name} → {a.index}")
+    elif a.cmd == "export-searchable":
+        from .accessible import export_searchable_pdf
+        print(export_searchable_pdf(a.path, llm, a.output))
+    elif a.cmd == "pilot-report":
+        from .appdb import AppDB
+        from .security import SecureLog
+        db = AppDB()
+        rows = SecureLog(os.environ["AGENTKIT_LOG"]).read() if os.getenv("AGENTKIT_LOG") else []
+        modes = {}
+        for r in rows:
+            modes[r["mode"]] = modes.get(r["mode"], 0) + 1
+        fb, total = db.feedback_report(), max(len(rows), 1)
+        rated = fb["up"] + fb["down"]
+        print(json.dumps({"questions": len(rows), "modes": modes,
+                          "deflection_rate": round((modes.get("answer", 0) + modes.get("account", 0)) / total, 3),
+                          "handoff_rate": round(modes.get("handoff", 0) / total, 3),
+                          "satisfaction": round(fb["up"] / rated, 3) if rated else None,
+                          "thumbs_down_reasons": [x["reason"] for x in fb["thumbs_down"] if x["reason"]][:20],
+                          "tickets": len(db.tickets()), "overdue_tickets": len(db.overdue_tickets()),
+                          "workload": db.workload()}, ensure_ascii=False, indent=1))
         from .appdb import AppDB
         cands = AppDB().eval_candidates()
         rows = ["# Golden-set candidates (from unanswered and thumbs-down questions)", "",
@@ -208,8 +273,14 @@ def _main(argv=None):
                 history += [{"role": "user", "content": q}, {"role": "assistant", "content": ans.text}]
                 print(f"\n({ans.agent} · {ans.mode})\n{ans.render()}")
         elif a.cmd == "eval":
-            rep = run_golden(chat)
-            for path, text in ((a.out, to_markdown("AUC Library golden eval", rep)),
+            from . import ROOT
+            qset = ROOT / "evals/auc-library" / {"golden": "golden-questions.md", "dev": "dev.md",
+                                                  "heldout": "heldout.md"}[a.set]
+            rep = run_golden(chat, qset)
+            if a.set != "golden":
+                a.out = a.out.replace("eval-report", f"{a.set}-report")
+                a.json = a.json.replace("eval-report", f"{a.set}-report")
+            for path, text in ((a.out, to_markdown(f"AUC Library {a.set} eval", rep)),
                                (a.json, json.dumps(rep, ensure_ascii=False, indent=1))):
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 Path(path).write_text(text, encoding="utf-8")

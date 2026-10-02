@@ -1,0 +1,16 @@
+{
+  "_comment": "Policy-domain links: a question about one topic also searches its related topics, and the UI suggests them. Edit freely.",
+  "topics": {
+    "exam": ["exam hours", "study rooms", "academic integrity", "extended hours"],
+    "fine": ["overdue", "renewal", "borrowing limits", "holds"],
+    "renew": ["due date", "holds", "borrowing limits", "fines"],
+    "thesis": ["theses", "dissertations", "Knowledge Fountain", "capstone projects", "citation help"],
+    "citation": ["APA", "MLA", "Chicago style", "research consultations"],
+    "alumni": ["alumni borrowing", "visitor access", "library card"],
+    "visitor": ["external visitors", "passport", "user card", "rare books access"],
+    "rare": ["Rare Books and Special Collections", "reading room", "digital collections", "reproduction requests"],
+    "photograph": ["digital collections", "reproduction requests", "copyright permission"],
+    "مواعيد": ["ساعات العمل", "الإجازات", "مواعيد الامتحانات"],
+    "استعارة": ["تجديد", "الغرامات", "الحجز"]
+  }
+}

@@ -15,17 +15,19 @@ _SENTENCE = re.compile(r"(?<=[.!?؟؛۔])\s+|\n+")
 AR_STOP = {"ال", "في", "من", "على", "الى", "عن", "ما", "هل", "او", "و", "ان", "هو", "هي", "كام", "ايه", "اللي", "النهارده",
            "ممكن", "عايز", "عاوز", "انا", "مع", "كل", "هذا", "هذه", "ذلك", "التي", "الذي", "لا", "يا", "بس",
            "ازاي", "ازاى", "فين", "امتي", "امتى", "ليه", "بتاعه", "بتاع", "بتاعت", "عندكم", "اي", "اللي", "دي", "ده",
-           "الاقي", "القي", "لو", "مين"}
+           "الاقي", "القي", "لو", "مين", "الكام", "كام", "قد", "منين", "يقدر", "يقدروا", "اقدر"}
 # Common Egyptian Franco-Arabic words (no digits) used to detect Arabizi even in short questions.
 FRANCO_WORDS = {"el", "momken", "ezay", "ezzay", "fen", "feen", "kam", "ana", "mesh", "msh", "bta3", "bta3t",
                 "bta3tak", "ya", "lel", "fe", "maktaba", "kotob", "ketab", "nadra", "leh", "eih", "delwa2ty",
-                "enaharda", "3ayez", "3ayza", "a2dar", "ageded", "mawa3id", "yesta3iro", "asta3ir", "w"}
+                "enaharda", "3ayez", "3ayza", "a2dar", "ageded", "mawa3id", "yesta3iro", "asta3ir", "w",
+                "maw3ed", "a3raf", "a7gez", "ma3ad", "amin", "ma3", "fat7a", "emta", "emata", "a3mel"}
 EN_STOP = {"the", "a", "an", "is", "are", "of", "to", "in", "on", "for", "and", "or", "do", "does", "i", "can",
            "how", "what", "my", "me", "it", "at", "be", "with", "this", "that", "you", "your", "there", "any",
            "please", "about", "from", "by", "as", "if", "where", "when", "which", "who", "will", "would", "s",
            # Franco-Arabic function words (where/how/can/the/of/I…)
            "el", "al", "fen", "feen", "ezay", "ezzay", "momken", "kam", "mesh", "msh", "bta3", "bta3t", "bta3tak",
-           "ya", "lel", "fe", "fi", "w", "leh", "eih", "3ayez", "3ayza", "a2dar", "ana", "enta", "enty"}
+           "ya", "lel", "fe", "fi", "w", "leh", "eih", "3ayez", "3ayza", "a2dar", "ana", "enta", "enty", "ma3",
+           "a3raf"}
 
 # Light10 (Larkey et al., UMass): strip "و", then articles, then suffixes — no root extraction.
 _AR_PREFIXES = ("وال", "بال", "كال", "فال", "لل", "ال")

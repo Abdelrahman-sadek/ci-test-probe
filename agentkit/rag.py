@@ -197,7 +197,7 @@ class BaseIndex:
         self.embedder, self.reranker = embedder, reranker
         self.lock = threading.RLock()
 
-    # --- storage contract -------------------------------------------------------------------------------
+    # Storage contract
     def add(self, chunks: list[Chunk]): raise NotImplementedError
     def remove_origin(self, origin: str) -> int: raise NotImplementedError
     def set_flag(self, origin: str, flag: str, on: bool) -> int: raise NotImplementedError
@@ -220,7 +220,29 @@ class BaseIndex:
     def _rank_dense(self, query: str, access: tuple, pool: int) -> list:
         return []
 
-    # --- search -------------------------------------------------------------------------------------------
+    # Snapshots
+    def snapshot(self, path: str | Path, keep: int | None = None) -> Path | None:
+        """Copy the saved index to <path>.snapshots/<timestamp> before a change; keep the newest N (default 5)."""
+        import shutil
+        import time
+        path = Path(path)
+        if not path.exists() or self.size == 0:  # nothing worth restoring
+            return None
+        keep = keep or int(os.getenv("AGENTKIT_SNAPSHOTS", "5"))
+        d = path.with_name(path.name + ".snapshots")
+        d.mkdir(exist_ok=True)
+        dest = d / f"{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 10**9:09d}{path.suffix}"  # sortable
+        if hasattr(self, "db"):  # SQLite: consistent online backup
+            import sqlite3
+            with sqlite3.connect(dest) as out:
+                self.db.backup(out)
+        else:
+            shutil.copy2(path, dest)
+        for old in sorted(d.iterdir())[:-keep]:
+            old.unlink()
+        return dest
+
+    # Search
     def search(self, query: str, k: int = 5, expansions: list[str] | None = None,
                access: tuple[str, ...] = ("public",), pool: int = 50) -> list[tuple[float, Chunk]]:
         """Hybrid search over chunks the caller may see (OWASP LLM08); quarantined chunks never surface."""
@@ -394,7 +416,8 @@ def _sha256(path: Path) -> str:
 
 def ingest(paths: list[str | Path], llm: LLM, index: BaseIndex | None = None, contextualize: str | bool = False,
            review: bool = False, allowed: list[str] | None = None, safe: bool = True,
-           force: bool = False) -> tuple[BaseIndex, list[dict]]:
+           force: bool = False, workers: int = 1, checkpoint=None, checkpoint_every: int = 25
+           ) -> tuple[BaseIndex, list[dict]]:
     """Incremental, provenance-tracked ingestion.
 
     * unchanged files (same SHA-256) are skipped; changed files replace their old chunks;
@@ -410,17 +433,17 @@ def ingest(paths: list[str | Path], llm: LLM, index: BaseIndex | None = None, co
              if f.is_file() and not f.name.startswith((".", "README"))
              and not f.name.endswith((".meta.json", ".corrections.json"))]
     known = index.manifest()
-    for f in files:
+
+    def parse(f: Path):
         origin = str(f)
         row = {"source": origin, "chunks": 0, "methods": [], "quarantined": 0, "status": "", "error": "",
                "low_confidence_pages": []}
-        report.append(row)
         try:
             sha = _sha256(f)
             prev = known.get(origin)
             if prev and prev.get("sha256") == sha and not force:
                 row["status"] = "unchanged"
-                continue
+                return row, None
             chunks, bodies = chunk_document(f, llm, safe)
             bad = sorted({c.source for c in chunks if not source_allowed(c.source, allowed)})
             if bad:
@@ -430,14 +453,25 @@ def ingest(paths: list[str | Path], llm: LLM, index: BaseIndex | None = None, co
                 for c in chunks:
                     c.flags.append("unreviewed")
             low = [{"page": pg, "confidence": conf} for pg, conf in getattr(chunk_document, "low_pages", [])]
-            row["low_confidence_pages"] = low
-            row.update(chunks=len(chunks), methods=sorted({c.method for c in chunks}),
+            row.update(chunks=len(chunks), methods=sorted({c.method for c in chunks}), low_confidence_pages=low,
                        quarantined=sum("injection" in c.flags for c in chunks),
                        status="pending-review" if held else ("updated" if prev else "new"))
-            staged.append((origin, sha, chunks, bodies, "pending" if held else "approved",
-                           chunks[0].source if chunks else "", low))
+            return row, (origin, sha, chunks, bodies, "pending" if held else "approved",
+                         chunks[0].source if chunks else "", low)
         except ValueError as e:  # includes ocr.ParseError
             row["error"] = str(e)
+            return row, None
+
+    if workers > 1:  # each parse runs in its own sandboxed child process, so threads give real parallelism
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(workers) as pool:
+            results = list(pool.map(parse, files))
+    else:
+        results = [parse(f) for f in files]
+    for row, item in results:
+        report.append(row)
+        if item:
+            staged.append(item)
     if contextualize and llm.live:
         pairs = [(bodies[c.id], c) for _, _, chunks, bodies, *_ in staged for c in chunks if not c.context]
         if contextualize == "batch":
@@ -447,13 +481,29 @@ def ingest(paths: list[str | Path], llm: LLM, index: BaseIndex | None = None, co
         for (_, c), ctx in zip(pairs, contexts):
             c.context = ctx
             c.tokens = tokenize(c.indexed_text)
-    for origin, sha, chunks, _, status, url, low in staged:
+    import time
+    for n, (origin, sha, chunks, _, status, url, low) in enumerate(staged, 1):
         with index.lock:
             index.remove_origin(origin)
             index.add(chunks)
             index.manifest_set(origin, {"sha256": sha, "status": status, "url": url, "chunks": len(chunks),
-                                        "low_confidence_pages": low})
+                                        "low_confidence_pages": low, "ingested_at": time.time()})
+        if checkpoint and n % checkpoint_every == 0:  # long archive runs survive interruption
+            checkpoint(index)
     return index, report
+
+
+def freshness(index: BaseIndex, appdb=None, stale_days: float | None = None, now: float | None = None) -> dict:
+    """Sources not re-ingested for AGENTKIT_STALE_DAYS (default 120) and notices expiring within 3 days."""
+    import datetime
+    import time
+    now = now or time.time()
+    stale_days = stale_days if stale_days is not None else float(os.getenv("AGENTKIT_STALE_DAYS", "120"))
+    stale = [{"origin": o, "url": e.get("url", ""), "days": round((now - e.get("ingested_at", 0)) / 86400)}
+             for o, e in index.manifest().items() if now - e.get("ingested_at", 0) > stale_days * 86400]
+    soon = (datetime.date.fromtimestamp(now) + datetime.timedelta(days=3)).isoformat()
+    expiring = [n for n in (appdb.notices() if appdb else []) if n["valid_to"] and n["valid_to"] <= soon]
+    return {"stale_sources": stale, "expiring_notices": expiring}
 
 
 def approve(index: BaseIndex, origin: str | None = None) -> list[str]:
@@ -467,4 +517,5 @@ def approve(index: BaseIndex, origin: str | None = None) -> list[str]:
     return done
 
 
-__all__ = ["BaseIndex", "Chunk", "Embedder", "Index", "Reranker", "approve", "chunk_document", "ingest", "rrf"]
+__all__ = ["BaseIndex", "Chunk", "Embedder", "Index", "Reranker", "approve", "chunk_document", "freshness",
+           "ingest", "rrf"]

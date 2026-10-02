@@ -40,8 +40,9 @@ class JobQueue:
             job = self.jobs[jid]
             job["status"] = "running"
             try:
+                self.index.snapshot(self.save_path)  # one-step rollback if a bad batch slips through
                 _, report = ingest(paths, self.llm, self.index, contextualize=self.contextualize, review=review,
-                                   force=force)
+                                   force=force, checkpoint=lambda ix: ix.save(self.save_path))
                 self.index.save(self.save_path)
                 job.update(status="done", report=report)
             except Exception as e:  # noqa: BLE001 — surface any failure in the job record

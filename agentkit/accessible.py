@@ -42,3 +42,26 @@ def export_html(path: str | Path, llm, title: str = "") -> str:
         out.append("</section>")
     out.append("</main></body></html>")
     return "\n".join(out)
+
+
+def export_searchable_pdf(path: str | Path, llm, output: str | Path) -> dict:
+    """Copy a PDF and add an invisible OCR text layer to pages that have none, so staff can search, copy
+    and reuse scanned material while the original image stays untouched (like OCRmyPDF)."""
+    import pymupdf
+
+    from .ocr import MIN_TEXT_CHARS, garbled, ocr_png
+    font = next((f for f in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",) if Path(f).exists()), None)
+    added = 0
+    with pymupdf.open(path) as doc:
+        for pg in doc:
+            existing = pg.get_text("text")
+            if len(existing.strip()) >= MIN_TEXT_CHARS and not garbled(existing):
+                continue
+            text, _, _ = ocr_png(pg.get_pixmap(dpi=200).tobytes("png"), llm)
+            if not text.strip():
+                continue
+            kwargs = {"fontfile": font, "fontname": "dejavu"} if font else {"fontname": "helv"}
+            pg.insert_textbox(pg.rect + (18, 18, -18, -18), text, fontsize=9, render_mode=3, **kwargs)  # invisible
+            added += 1
+        doc.save(output, garbage=3, deflate=True)
+    return {"pages_with_new_text_layer": added, "output": str(output)}

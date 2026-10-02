@@ -1,0 +1,10 @@
+{
+  "_comment": "Non-library questions are referred to the right campus office instead of a dead end. Names/URLs are placeholders until AUC confirms them [VERIFY].",
+  "offices": [
+    {"office": "Registrar", "keywords": ["registration", "register for", "course registration", "transcript", "grades", "enroll", "add drop", "تسجيل", "كشف درجات"], "url": "https://www.aucegypt.edu"},
+    {"office": "Writing Center", "keywords": ["essay feedback", "writing help", "proofread", "thesis writing", "كتابة"], "url": "https://www.aucegypt.edu"},
+    {"office": "IT Help Desk", "keywords": ["wifi", "email password", "blackboard", "canvas", "laptop", "واي فاي"], "url": "https://www.aucegypt.edu"},
+    {"office": "Student Wellness / Counseling", "keywords": ["stress", "anxious", "counseling", "mental health", "قلق"], "url": "https://www.aucegypt.edu"},
+    {"office": "Financial Aid", "keywords": ["scholarship", "tuition", "financial aid", "منحة", "مصاريف"], "url": "https://www.aucegypt.edu"}
+  ]
+}

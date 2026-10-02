@@ -7,6 +7,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 os.environ.setdefault("AGENTKIT_ALLOWED_DOMAINS", "")  # fixtures use example URLs; allowlist tested explicitly
 os.environ.setdefault("AGENTKIT_LOG_SALT", "test-salt")
+os.environ.setdefault("AGENTKIT_OCR", "claude")  # tests use the stand-in OCR text, not a locally installed Tesseract
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 

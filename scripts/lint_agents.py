@@ -8,6 +8,10 @@ KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 MODELS = {"haiku", "sonnet", "opus", "fable", "inherit"}
 COLORS = {"red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"}
 MAX_LINES, MAX_DESC = 120, 300
+# antislop (github.com/miqdadbadjuber/anti-slop): words that make agent instructions vague and their output generic.
+SLOP = re.compile(r"\b(delve|seamless(ly)?|robust|elevate|unlock|empower|cutting[- ]edge|game[- ]changer|"
+                  r"next[- ]level|world[- ]class|best[- ]in[- ]class|synerg\w*|revolutioni[sz]\w*|"
+                  r"i hope this helps|feel free to)\b", re.I)
 
 
 def frontmatter(path: Path) -> tuple[dict, str]:
@@ -46,6 +50,8 @@ def lint_agent(path: Path) -> list[str]:
     for section in ("## Rules", "## Workflow", "## Output"):
         if not re.search(rf"^{re.escape(section)}", body, re.M):
             errs.append(f"{path}: missing section '{section}'")
+    for m in SLOP.finditer(body):
+        errs.append(f"{path}: filler word '{m.group(0)}' — say what the agent does instead")
     lines = path.read_text(encoding="utf-8").count("\n") + 1
     if lines > MAX_LINES:
         errs.append(f"{path}: {lines} lines (max {MAX_LINES})")

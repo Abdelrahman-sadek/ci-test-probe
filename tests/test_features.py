@@ -44,7 +44,7 @@ def app(monkeypatch, seed_index, tmp_path):
 ADMIN = {"X-API-Key": "a" * 32}
 
 
-# 1 ---------------------------------------------------------------- feedback loop
+# 1: feedback loop
 def test_feedback_and_unanswered_become_eval_candidates(app):
     client, chat, db, _ = app
     ans = client.post("/api/ask", json={"question": "Can alumni borrow books?"}).json()
@@ -57,7 +57,7 @@ def test_feedback_and_unanswered_become_eval_candidates(app):
     assert {"Can alumni borrow books?", "How much does printing cost?"} <= cands
 
 
-# 2 ---------------------------------------------------------------- saved conversations and searches
+# 2: saved conversations and searches
 def test_history_is_per_user_and_requires_sign_in(app):
     client, *_ = app
     assert client.get("/api/saved").status_code == 401
@@ -86,7 +86,7 @@ def test_appdb_encrypts_and_purges(tmp_path):
     assert db.purge(now=9e12) >= 1 and db.conversations("u") == []
 
 
-# 3 ---------------------------------------------------------------- live hours and rooms (LibCal)
+# 3: live hours and rooms (LibCal)
 def fake_libcal(status="open"):
     def fetch(url, data=None, headers=None):
         if "oauth" in url:
@@ -107,7 +107,7 @@ def test_live_hours_answer_and_not_cached(seed_index):
     assert any(c.method == "live-rooms" for _, c in rooms.hits)
 
 
-# 4 ---------------------------------------------------------------- effective dates and pinned notices
+# 4: effective dates and pinned notices
 def test_expired_content_hidden_and_urgent_notice_pinned(tmp_path, seed_index):
     old = tmp_path / "ramadan.md"
     old.write_text("---\ntitle: Ramadan hours\nvalid_to: 2020-01-01\n---\n# Ramadan\n\n## Hours\n"
@@ -130,7 +130,7 @@ def test_notice_admin_api(app):
     assert client.post("/admin/api/notices", json={"title": "x", "body": "y"}).status_code == 403
 
 
-# 6 ---------------------------------------------------------------- OCR layout, tables, confidence
+# 6: OCR layout, tables, confidence
 def _two_column_pdf(path):
     doc = pymupdf.open()
     pg = doc.new_page()
@@ -164,7 +164,7 @@ def _png():
     return pg.get_pixmap(dpi=72).tobytes("png")
 
 
-# 7 ---------------------------------------------------------------- correction queue
+# 7: correction queue
 def test_low_confidence_page_corrected_and_reindexed(app, tmp_path):
     client, chat, _, jobs = app
     scan = tmp_path / "scan.png"
@@ -180,7 +180,7 @@ def test_low_confidence_page_corrected_and_reindexed(app, tmp_path):
     assert hit.method == "corrected" and hit.confidence == 1.0
 
 
-# 8 ---------------------------------------------------------------- preprocessing, handwriting, scan view
+# 8: preprocessing, handwriting, scan view
 def test_preprocess_and_handwriting_prompt():
     from PIL import Image
     import io
@@ -199,7 +199,7 @@ def test_page_image_only_for_indexed_visible_pdfs(app, tmp_path, pdfs):
     assert client.get("/api/page-image", params={"origin": str(pdfs[0]), "page": 9}).status_code == 404
 
 
-# 9 ---------------------------------------------------------------- real handoff
+# 9: real handoff
 def test_handoff_ticket_consent_and_routing(app):
     client, chat, db, _ = app
     assert client.post("/api/handoff", json={"question": "How much does printing cost?", "email": "s@aucegypt.edu"}).status_code == 422
@@ -232,7 +232,7 @@ def test_handoff_email_and_libanswers_backends(monkeypatch):
     assert h2.create("question", "Help with APA")["delivered_via"] == "libanswers" and posts[0][1]["quid"] == "42"
 
 
-# 10 --------------------------------------------------------------- subject librarians + consultations
+# 10: subject librarians + consultations
 def test_librarian_routing_and_consultation_action(chat):
     assert match_librarian("sources on renewable energy engineering")["subject"] == "Science and engineering"
     a = chat.ask("I need peer-reviewed articles on water scarcity in Egypt")
@@ -241,7 +241,7 @@ def test_librarian_routing_and_consultation_action(chat):
     assert next(x for x in a.actions if x["type"] == "librarian")["subject"] == "Social sciences and law"
 
 
-# 11 --------------------------------------------------------------- read-only account
+# 11: read-only account
 ALMA = {"loans": {"item_loan": [{"loan_id": "L1", "title": "Palace Walk", "due_date": "2026-10-20Z", "loan_status": "ACTIVE"}]},
         "requests": {"user_request": [{"title": "Sugar Street", "request_status": "IN_PROCESS", "request_type": "HOLD"}]},
         "resource-sharing-requests": {"user_resource_sharing_request": [{"title": "ILL book", "status": {"desc": "Shipped"}}]},
@@ -264,7 +264,7 @@ def test_account_answers_are_direct_private_and_read_only(seed_index, tmp_path, 
     assert chat.ask("renew my books", user="amira@aucegypt.edu").actions[0]["type"] == "renew"
 
 
-# 12 --------------------------------------------------------------- special collections
+# 12: special collections
 EAD = """<ead xmlns="urn:isbn:1-931666-22-9"><archdesc level="collection"><did><unittitle>Cairo Photographs Collection</unittitle>
 <unitdate>1920-1950</unitdate><unitid>RBSCL-PH-12</unitid><physdesc><extent>12 boxes</extent></physdesc></did>
 <scopecontent><p>Photographs of Cairo streets, mosques and markets.</p></scopecontent>

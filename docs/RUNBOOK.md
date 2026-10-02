@@ -1,0 +1,39 @@
+# Runbook: on-call and incidents
+
+## Health checks
+- `GET /healthz`: `{"status": "ok", "chunks": <n>, "index_version": "…", "llm": "ok" | "outage" | "budget"}`.
+- `GET /metrics` (admin): `agentkit_llm_failures_total`, `agentkit_degraded_total`, `agentkit_handoff_failures_total`, latency per stage, cost.
+- Daily cron: `agentkit tickets-check` (escalates overdue handoffs) and `agentkit freshness` (stale sources, expiring notices).
+
+## Incidents
+| Symptom | Likely cause | Action |
+|---|---|---|
+| Banner "search results only" | Model API outage or daily budget reached (`/healthz` llm) | Outage: nothing to do, the breaker retries after `AGENTKIT_LLM_COOLDOWN`. Budget: raise `AGENTKIT_DAILY_BUDGET_USD` or wait for midnight. |
+| Answers wrong after an ingest | Bad source or parse | `agentkit snapshots`, then `agentkit rollback`; fix the source; `agentkit review` before approving. |
+| Index file corrupt | Disk full or killed write | `agentkit rollback` (keeps the broken file as `<index>.corrupt`). |
+| Handoffs show "couldn't reach the librarians' inbox" | LibAnswers or SMTP down | Tickets are saved; staff answer from `/admin`. Fix credentials; `agentkit_handoff_failures_total` shows which backend. |
+| Many 429s | Rate limit too low for a class session | Raise `AGENTKIT_RATE` temporarily. |
+| Injection or abuse report | Planted text in a document, or a user attack | Find the source with `agentkit ask … --debug`; quarantine it (`remove_origin` via re-ingest without it); add the case to `evals/security/attacks.md`; run `agentkit redteam`. |
+| Private data in an answer | Redaction gap | Severity 1: take the service offline, purge logs for that user (`agentkit purge-logs --user`), tell the data protection officer, add a test. |
+
+## Severity and escalation
+| Severity | Example | Response |
+|---|---|---|
+| 1 | private data exposed, service compromised | within 1 hour: systems librarian → IT security → data protection officer |
+| 2 | service down, wrong policy answers spreading | same working day: systems librarian → head of reference |
+| 3 | one wrong answer, stale page | next working day: content owner fixes the page |
+
+## Content owners
+Each source in `knowledge/auc-library/sources.md` names its owner. Defaults until AUC assigns them [VERIFY]:
+| Content | Owner |
+|---|---|
+| Borrowing, renewals, hours | Access services |
+| Rare books, archives, finding aids | RBSCL research services |
+| Research help, subject librarians | Reference and instruction |
+| Knowledge Fountain | Scholarly communication |
+| Notices (closures, exam hours) | Library communications, via `/admin` |
+
+## Security review notes
+- **SSO:** `AGENTKIT_AUTH=proxy` trusts `X-Forwarded-User`/`-Groups`, so the app must be reachable only through the SSO proxy, and the proxy must strip incoming copies of those headers. In JWT mode, prefer RS256 keys from `AGENTKIT_JWT_JWKS` over a shared HS256 secret. `AGENTKIT_TRUST_PROXY=1` only makes Uvicorn read the client IP from the proxy (for rate limits).
+- **WhatsApp webhook:** requests without a valid `X-Hub-Signature-256` are rejected; rotate the app secret if it leaks.
+- **Staff page:** admin APIs need the admin role or `X-API-Key`; keep the key out of browsers on shared machines and rotate it each term.

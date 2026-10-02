@@ -109,7 +109,7 @@ class CorrectionIn(BaseModel):
 
 
 class StatusIn(BaseModel):
-    status: str = Field(pattern=r"^(queued|sent|in-progress|answered|closed)$")
+    status: str = Field(pattern=r"^(queued|sent|in-progress|answered|closed|escalated)$")
 
 
 class RenewIn(BaseModel):
@@ -171,7 +171,7 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
             raise HTTPException(403, "admin only")
         return who
 
-    # ---------------------------------------------------------------- pages and static assets
+    # Pages and static assets
     @app.get("/", response_class=HTMLResponse)
     @app.get("/embed", response_class=HTMLResponse)
     def page():
@@ -198,9 +198,14 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok", "chunks": chat.index.size, "index_version": chat.index.version}
+        llm_state = chat.llm.status() if hasattr(chat.llm, "status") else ("ok" if chat.llm.live else "offline")
+        return {"status": "ok", "chunks": chat.index.size, "index_version": chat.index.version, "llm": llm_state}
 
-    # ---------------------------------------------------------------- chat API
+    @app.get("/privacy", response_class=HTMLResponse)
+    def privacy():
+        return FileResponse(STATIC / "privacy.html", media_type="text/html")
+
+    # Chat API
     @app.get("/api/agents")
     def agents():
         return [{"name": a.name, "division": a.division, "description": a.description} for a in load_all().values()]
@@ -233,6 +238,20 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
             except PermissionError as e:
                 raise HTTPException(403, str(e)) from e
         return ans
+
+    @app.get("/api/me/data")
+    def export_my_data(who: Principal = Depends(principal)):
+        """Data-subject access request: everything stored about the signed-in user, as JSON."""
+        return need(appdb).export_user(signed_in(who))
+
+    @app.delete("/api/me/data")
+    def delete_my_data(who: Principal = Depends(principal)):
+        """Data-subject erasure request: saved chats, searches, feedback, tickets and log rows."""
+        user = signed_in(who)
+        removed = need(appdb).delete_user(user)
+        if chat.log is not None:
+            removed += chat.log.purge(user=user)
+        return {"deleted_rows": removed}
 
     @app.post("/api/feedback")
     def feedback(body: FeedbackIn, who: Principal = Depends(rate_limited)):
@@ -331,7 +350,7 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
         return StreamingResponse(events(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
-    # ---------------------------------------------------------------- admin API
+    # Admin API
     @app.get("/metrics", response_class=PlainTextResponse)
     def metrics(request: Request):
         if os.getenv("AGENTKIT_METRICS_PUBLIC") != "1":
@@ -346,7 +365,15 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
                 "requests": METRICS.value("agentkit_requests_total"),
                 "handoffs": METRICS.value("agentkit_requests_total", mode="handoff"),
                 "llm_cost_usd": round(METRICS.value("agentkit_llm_cost_usd_total"), 4),
-                "pending_review": [o for o, e in chat.index.manifest().items() if e.get("status") == "pending"]}
+                "pending_review": [o for o, e in chat.index.manifest().items() if e.get("status") == "pending"],
+                "degraded_answers": METRICS.value("agentkit_degraded_total"),
+                "overdue_tickets": len(appdb.overdue_tickets()) if appdb else None,
+                "workload": appdb.workload() if appdb else None}
+
+    @app.get("/admin/api/freshness")
+    def freshness_report(_: Principal = Depends(admin)):
+        from .rag import freshness
+        return freshness(chat.index, appdb)
 
     @app.post("/admin/api/upload")
     def upload(body: UploadIn, _: Principal = Depends(admin)):
@@ -433,7 +460,7 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
             chat.index.save(jobs.save_path)
         return {"approved": done}
 
-    # ---------------------------------------------------------------- WhatsApp channel
+    # WhatsApp channel
     @app.get("/whatsapp", response_class=PlainTextResponse)
     def wa_verify(request: Request):
         q = request.query_params

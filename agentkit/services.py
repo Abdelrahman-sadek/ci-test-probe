@@ -85,12 +85,44 @@ class Handoff:
         payload = {"kind": kind, "question": redact(question[:500]), "summary": transcript_summary(history or [], question),
                    "email": email if consent else "", "name": name[:100] if consent else "",
                    "subject": routed.get("subject", "Reference"), **(extra or {})}
-        delivered = self._libanswers(payload, routed) or self._email(payload, routed) or "queue"
+        delivered, failures = None, []
+        for backend in (self._libanswers, self._email):  # a failing backend never drops the request silently
+            try:
+                delivered = backend(payload, routed)
+            except Exception as e:  # noqa: BLE001
+                failures.append(f"{backend.__name__.strip('_')}: {type(e).__name__}")
+                from .metrics import METRICS
+                METRICS.inc("agentkit_handoff_failures_total", backend=backend.__name__.strip("_"))
+            if delivered:
+                break
+        delivered = delivered or "queue"
+        if failures:
+            payload["delivery_failures"] = failures
         tid = self.appdb.add_ticket(kind, payload, routed.get("subject", "Reference"), user,
                                     status="sent" if delivered != "queue" else "queued")
         open_now = self.libcal.is_open_now() if self.libcal else None
         when = {True: "The library is open now, so a librarian should reply soon.",
                 False: "The library is closed now; a librarian will reply when it reopens.",
                 None: "A librarian will reply during opening hours."}[open_now]
+        if failures and delivered == "queue":
+            when = ("We couldn't reach the librarians' inbox just now, but your question is saved (reference above) "
+                    "and staff will see it on their dashboard. " + when)
         return {"ticket": tid, "delivered_via": delivered.split(":")[0], "routed_to": routed.get("subject", "Reference"),
                 "contact": routed.get("contact", ""), "booking_url": routed.get("booking_url", ""), "message": when}
+
+
+def escalate_overdue(appdb, handoff: "Handoff | None" = None) -> list[str]:
+    """Mark tickets past the SLA (AGENTKIT_TICKET_SLA_HOURS, default 48) as escalated and notify the
+    escalation mailbox (AGENTKIT_ESCALATION_EMAIL) when email is configured. Run from cron: `agentkit tickets-check`."""
+    done = []
+    for t in appdb.overdue_tickets():
+        appdb.set_ticket_status(t["id"], "escalated")
+        done.append(t["id"])
+    to = os.getenv("AGENTKIT_ESCALATION_EMAIL", "")
+    if done and to and handoff is not None and os.getenv("AGENTKIT_SMTP_HOST"):
+        try:
+            handoff._email({"kind": "escalation", "question": f"{len(done)} overdue ticket(s)",
+                            "summary": ", ".join(done)}, {"email": to})
+        except Exception:  # noqa: BLE001 — escalation status is recorded even if the email fails
+            pass
+    return done

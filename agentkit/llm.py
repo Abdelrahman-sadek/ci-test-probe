@@ -25,10 +25,14 @@ CONTEXT_PROMPT = ("Here is the chunk we want to situate within the whole documen
                   "Please give a short succinct context to situate this chunk within the overall document for the "
                   "purposes of improving search retrieval of the chunk. Answer only with the succinct context and "
                   "nothing else.")
+FIGURE_PROMPT = ("For each figure, chart, diagram or equation on this page write one line: "
+                 "'[figure: <caption if any> — <one-sentence description of what it shows>]' or "
+                 "'[formula: <LaTeX>]'. Output only those lines; output nothing if there are none.")
 OCR_PROMPT = ("Transcribe ALL text in this scanned page exactly, in reading order. Keep Arabic in Arabic script and "
               "English in English; preserve headings, lists and tables (tables as Markdown). Write unreadable spans "
               "as [illegible]. Transcribe handwritten notes and margin annotations where they appear as "
-              "[handwritten: …]. Output only the transcription, then a final line 'CONFIDENCE: high', "
+              "[handwritten: …]. Write mathematical formulas as LaTeX between $…$ and describe figures/diagrams as "
+              "[figure: caption — what it shows]. Output only the transcription, then a final line 'CONFIDENCE: high', "
               "'CONFIDENCE: medium' or 'CONFIDENCE: low' for how legible the page was.")
 
 
@@ -38,6 +42,7 @@ class Grounded:
     text: str
     cited: list[int] = field(default_factory=list)
     quotes: dict[int, list[str]] = field(default_factory=dict)
+    degraded: str = ""  # "outage" | "budget" when the answer came from the extractive fallback
 
 
 class LLM:
@@ -56,6 +61,9 @@ class LLM:
     def contextualize(self, document: str, chunk: str) -> str:
         return ""
 
+    def describe_figures(self, png: bytes) -> str:
+        return ""
+
     def contextualize_batch(self, items: list[tuple[str, str]]) -> list[str]:
         return [self.contextualize(doc, chunk) for doc, chunk in items]
 
@@ -72,7 +80,7 @@ class AnthropicLLM(LLM):
     def __init__(self, client=None):
         if client is None:
             import anthropic
-            client = anthropic.Anthropic()
+            client = anthropic.Anthropic(timeout=float(os.getenv("AGENTKIT_LLM_TIMEOUT", "30")), max_retries=2)
         self.client = client
 
     @staticmethod
@@ -168,6 +176,12 @@ class AnthropicLLM(LLM):
                    {"type": "text", "text": f"{OCR_PROMPT} {hint}".strip()}]
         return self._text(self._create(MODEL_SMART, 16000, content))
 
+    def describe_figures(self, png):
+        content = [{"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                                "data": base64.b64encode(png).decode()}},
+                   {"type": "text", "text": FIGURE_PROMPT}]
+        return self._text(self._create(MODEL_SMART, 2000, content))
+
     def contextualize(self, document, chunk):
         system = f"<document>\n{document}\n</document>"  # cached once per document, reused for every chunk
         return self._text(self._create(MODEL_FAST, 300, CONTEXT_PROMPT.format(chunk=chunk), system))
@@ -195,19 +209,21 @@ class FakeLLM(LLM):
         if pri:  # mirror the live rule: notices and live data win over stored pages
             cands = pri
         df = Counter(t for _, _, toks in cands for t in toks)  # rare terms ("outside", "subject") weigh more
-        best = None
-        for i, sent, toks in cands:
-            score = sum(math.log(1 + len(cands) / df[t]) for t in q & toks) / math.sqrt(i)  # rank prior
-            if score and (best is None or score > best[0]):
-                best = (score, i, sent)
+        scored = sorted(((sum(math.log(1 + len(cands) / df[t]) for t in q & toks) / math.sqrt(i), i, sent, toks)
+                         for i, sent, toks in cands), key=lambda x: -x[0])  # rank prior
+        best = scored[0][:3] if scored and scored[0][0] else None
         if best is None:  # no lexical overlap (e.g. Arabic question, English page): trust the top-ranked source
             lead = next((b for b in sources[0]["blocks"][1:] if b.strip() and not b.startswith("|")), "") \
                 if sources else ""
             if not lead:
                 return Grounded(NO_ANSWER)
             best = (0, 1, lead)
-        _, n, sent = best
-        return Grounded(f"{sources[n - 1]['title']}: {sent} [{n}]", [n], {n: [sent]})
+        top, n, sent = best
+        # A second sentence from the same source joins when it is nearly as relevant and covers other query terms.
+        used = next((t for s_, i, x, t in scored if x == sent), set()) & q
+        extra = next((x for s_, i, x, t in scored[1:4] if i == n and s_ >= 0.6 * top and (t & q) - used), "")
+        quotes = [sent] + ([extra] if extra else [])
+        return Grounded(f"{sources[n - 1]['title']}: {' '.join(quotes)} [{n}]", [n], {n: quotes})
 
     def stream_answer(self, system, question, sources):
         g = self.answer(system, question, sources)
@@ -219,9 +235,107 @@ class FakeLLM(LLM):
         return self.ocr_text
 
 
+class ResilientLLM(LLM):
+    """Production wrapper around the live model:
+    * circuit breaker — after 3 consecutive failures the model is skipped for AGENTKIT_LLM_COOLDOWN seconds;
+    * daily budget — above AGENTKIT_DAILY_BUDGET_USD of estimated spend, answers switch to extractive mode;
+    * graceful degradation — failures fall back to the extractive answerer, marked `degraded` so the UI can
+      show a "search results only" banner instead of an error."""
+
+    def __init__(self, inner: LLM, fallback: LLM | None = None, budget_usd: float | None = None,
+                 cooldown: float | None = None):
+        self.inner, self.fallback = inner, fallback or FakeLLM()
+        env_budget = os.getenv("AGENTKIT_DAILY_BUDGET_USD")
+        self.budget = budget_usd if budget_usd is not None else (float(env_budget) if env_budget else None)
+        self.cooldown = cooldown if cooldown is not None else float(os.getenv("AGENTKIT_LLM_COOLDOWN", "60"))
+        self.failures, self.open_until = 0, 0.0
+        self._day, self._day_start_cost = "", 0.0
+
+    def _cost_today(self) -> float:
+        import datetime
+        today = datetime.date.today().isoformat()
+        total = METRICS.value("agentkit_llm_cost_usd_total")
+        if today != self._day:
+            self._day, self._day_start_cost = today, total
+        return total - self._day_start_cost
+
+    def status(self) -> str:
+        import time
+        if self.budget is not None and self._cost_today() >= self.budget:
+            return "budget"
+        if time.monotonic() < self.open_until:
+            return "outage"
+        return "ok"
+
+    @property
+    def live(self) -> bool:
+        return self.inner.live and self.status() == "ok"
+
+    def _call(self, name: str, *args, **kwargs):
+        import time
+        state = self.status()
+        if state == "ok":
+            try:
+                out = getattr(self.inner, name)(*args, **kwargs)
+                self.failures = 0
+                return out, ""
+            except Exception:  # noqa: BLE001 — any API/network failure degrades instead of erroring
+                self.failures += 1
+                METRICS.inc("agentkit_llm_failures_total")
+                if self.failures >= 3:
+                    self.open_until = time.monotonic() + self.cooldown
+                state = "outage"
+        METRICS.inc("agentkit_degraded_total", reason=state)
+        return getattr(self.fallback, name)(*args, **kwargs), state
+
+    def complete(self, system, user, *, fast=False, max_tokens=None):
+        return self._call("complete", system, user, fast=fast, max_tokens=max_tokens)[0]
+
+    def answer(self, system, question, sources):
+        g, state = self._call("answer", system, question, sources)
+        g.degraded = state
+        return g
+
+    def stream_answer(self, system, question, sources):
+        if self.status() != "ok":
+            g = self.answer(system, question, sources)
+            yield "delta", g.text
+            yield "done", g
+            return
+        try:
+            yield from self.inner.stream_answer(system, question, sources)
+            self.failures = 0
+        except Exception:  # noqa: BLE001
+            self.failures += 1
+            METRICS.inc("agentkit_llm_failures_total")
+            g = self.fallback.answer(system, question, sources)
+            g.degraded = "outage"
+            yield "delta", g.text
+            yield "done", g
+
+    def ocr_image(self, png, hint=""):
+        from .ocr import _tesseract
+        try:
+            if self.status() == "ok":
+                return self.inner.ocr_image(png, hint)
+        except Exception:  # noqa: BLE001
+            METRICS.inc("agentkit_llm_failures_total")
+        res = _tesseract(png)  # local OCR keeps ingestion going during an outage or over budget
+        return f"{res[0]}\nCONFIDENCE: {'medium' if res[1] > 0.8 else 'low'}" if res else ""
+
+    def contextualize(self, document, chunk):
+        return self._call("contextualize", document, chunk)[0] if self.status() == "ok" else ""
+
+    def describe_figures(self, png):
+        return self._call("describe_figures", png)[0] if self.status() == "ok" else ""
+
+    def contextualize_batch(self, items):
+        return self.inner.contextualize_batch(items) if self.status() == "ok" else ["" for _ in items]
+
+
 def get_llm() -> LLM:
     has_creds = any(os.getenv(v) for v in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")) or \
         os.getenv("AGENTKIT_LIVE") == "1"  # e.g. credentials from an `ant auth login` profile
     if has_creds and os.getenv("AGENTKIT_FAKE") != "1":
-        return AnthropicLLM()
+        return ResilientLLM(AnthropicLLM())
     return FakeLLM()

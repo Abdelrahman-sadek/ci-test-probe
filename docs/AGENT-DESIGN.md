@@ -23,6 +23,7 @@ Every agent file is loaded into context on every turn it is active. A 300-line p
 - [ ] ≤ 120 lines and a smoke test in `evals/agents/smoke.json` (`scripts/lint-agents.sh` enforces both)
 - [ ] No facts that can go stale inside the agent — put them in `knowledge/` and tell the agent to read/retrieve them
 - [ ] Domain facts the agent is unsure of are marked `[VERIFY]`
+- [ ] No filler words (seamless, robust, delve…) and no "I hope this helps" closers in instructions or output; the linter rejects them (rules adapted from [antislop](https://github.com/miqdadbadjuber/anti-slop))
 
 ## Measured cost
 `claude plugin details` reports the always-on cost of each division plugin: core ~347 tokens, rag ~325, chat ~209, auc-library ~424. That's the whole roster's routing cost per session.

@@ -27,9 +27,28 @@ jobs:
           agentkit --index data/index.db ingest knowledge/auc-library/pages
           agentkit --index data/index.db eval --min-pass 0.95 --min-recall 0.9
           agentkit test-agents
+      - name: Dev and held-out evals (reported, no threshold; see docs/EVALUATION-LOG.md)
+        run: |
+          agentkit --index data/index.db eval --set dev || true
+          agentkit --index data/index.db eval --set heldout || true
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.python == '3.12'
+        with: {name: eval-reports, path: data/*-report.md}
       - name: Search latency (SQLite, 20k chunks, p95 ≤ 300 ms)
         if: matrix.python == '3.12'
         run: python scripts/bench_search.py --chunks 20000 --backends sqlite --target-p95-ms 300
+  ocr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-ara fonts-dejavu-core
+      - run: pip install -e ".[dev,tesseract]"
+      - name: OCR bench (synthetic EN/AR, mean CER ≤ 0.2) and Tesseract tests
+        run: |
+          python scripts/ocr_bench.py --engine tesseract --target-cer 0.2
+          AGENTKIT_OCR=tesseract pytest -q tests/test_round1.py -k diacritized
   accessibility:
     runs-on: ubuntu-latest
     steps:

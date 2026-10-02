@@ -19,6 +19,7 @@ MAX_FILE_MB = float(os.getenv("AGENTKIT_MAX_FILE_MB", "25"))
 MAX_PAGES = int(os.getenv("AGENTKIT_MAX_PAGES", "500"))
 PARSE_TIMEOUT = float(os.getenv("AGENTKIT_PARSE_TIMEOUT", "120"))
 PARSE_MEMORY_MB = int(os.getenv("AGENTKIT_PARSE_MEMORY_MB", "2048"))
+OCR_MAX_PAGES = int(os.getenv("AGENTKIT_OCR_MAX_PAGES_PER_DOC", "200"))  # cost cap per document
 
 
 LOW_CONFIDENCE = float(os.getenv("AGENTKIT_LOW_CONFIDENCE", "0.7"))
@@ -43,8 +44,13 @@ def preprocess(png: bytes) -> bytes:
     if os.getenv("AGENTKIT_OCR_PREPROCESS") == "0":
         return png
     import io
-    from PIL import Image, ImageOps
-    img = ImageOps.autocontrast(Image.open(io.BytesIO(png)).convert("L"))
+    from PIL import Image, ImageFilter, ImageOps
+    img = Image.open(io.BytesIO(png)).convert("L")
+    # salt-and-pepper speckle (old photocopies): median filter only when isolated pixels are common
+    # (measured: clean pages ≈ 0.0005, speckled ≈ 0.0125)
+    if _speckle_ratio(img) > 0.004:
+        img = img.filter(ImageFilter.MedianFilter(3))
+    img = ImageOps.autocontrast(img)
     if img.width < 1500:  # OCR quality drops sharply below ~200 DPI
         scale = 1500 / img.width
         img = img.resize((1500, int(img.height * scale)), Image.LANCZOS)
@@ -64,19 +70,35 @@ def preprocess(png: bytes) -> bytes:
     return out.getvalue()
 
 
+def _speckle_ratio(img) -> float:
+    """Share of pixels that a 3×3 median filter changes strongly — high for salt-and-pepper noise."""
+    from PIL import ImageChops, ImageFilter
+    diff = ImageChops.difference(img, img.filter(ImageFilter.MedianFilter(3)))
+    hist = diff.histogram()
+    return sum(hist[128:]) / max(img.width * img.height, 1)
+
+
 def _tesseract(png: bytes) -> tuple[str, float] | None:
+    """Two-pass Tesseract: the original and a lightly softened copy. Tesseract sometimes drops short lines
+    on very sharp Arabic print (measured in scripts/ocr_bench.py); the more complete confident pass wins."""
     try:
         import io
         import pytesseract
-        from PIL import Image
+        from PIL import Image, ImageFilter
     except ImportError:
         return None
     if not shutil.which("tesseract"):
         return None
-    img = Image.open(io.BytesIO(png))
-    data = pytesseract.image_to_data(img, lang="ara+eng", output_type=pytesseract.Output.DICT)
-    confs = [float(c) for c in data["conf"] if str(c) not in ("-1", "-1.0")]
-    return pytesseract.image_to_string(img, lang="ara+eng"), (sum(confs) / len(confs) / 100 if confs else 0.0)
+    base = Image.open(io.BytesIO(png))
+    best = None
+    for img in (base, base.filter(ImageFilter.GaussianBlur(1.0))):
+        data = pytesseract.image_to_data(img, lang="ara+eng", output_type=pytesseract.Output.DICT)
+        confs = [float(c) for c in data["conf"] if str(c) not in ("-1", "-1.0")]
+        conf = sum(confs) / len(confs) / 100 if confs else 0.0
+        text = pytesseract.image_to_string(img, lang="ara+eng")
+        if best is None or (conf >= 0.6 and len(text.split()) > len(best[0].split())):
+            best = (text, conf)
+    return best
 
 
 _MODEL_CONF = {"high": 0.95, "medium": 0.75, "low": 0.45}
@@ -206,6 +228,16 @@ def garbled(text: str) -> bool:
     return bool(arabic_words) and sum(bool(_MIXED.search(w)) for w in arabic_words) / len(arabic_words) > 0.05
 
 
+def _has_figures(pg) -> bool:
+    """True when embedded images cover at least 15% of the page (figures, charts, diagrams)."""
+    area = pg.rect.width * pg.rect.height
+    covered = 0.0
+    for info in pg.get_image_info():
+        x0, y0, x1, y1 = info["bbox"]
+        covered += max(0, x1 - x0) * max(0, y1 - y0)
+    return covered / area >= 0.15
+
+
 def ead_to_text(xml: str) -> str:
     """Archival finding aids (EAD 2002/3): collection title, dates, extent, scope note, access/use terms,
     and the series/file list, as Markdown so each part becomes a citable chunk."""
@@ -271,11 +303,18 @@ def extract(path: str | Path, llm: LLM, dpi: int = 200) -> list[Page]:
         with pymupdf.open(path) as doc:
             if doc.page_count > MAX_PAGES:
                 raise ParseError(f"{path.name}: {doc.page_count} pages (max {MAX_PAGES})")
+            ocr_pages = 0
+            figures = os.getenv("AGENTKIT_FIGURES") == "1" and llm.live
             for i, pg in enumerate(doc, 1):
                 text = layout_text(pg)
                 if len(text.strip()) >= MIN_TEXT_CHARS and not garbled(text):
+                    if figures and _has_figures(pg):  # STEM theses: diagrams and formulas become searchable
+                        text += "\n\n" + llm.describe_figures(pg.get_pixmap(dpi=dpi).tobytes("png"))
                     pages.append(Page(text, i, "text", page_confidence(text)))
+                elif ocr_pages >= OCR_MAX_PAGES:
+                    pages.append(Page("", i, "ocr-skipped", 0.0))  # re-run with a higher cap to continue
                 else:
+                    ocr_pages += 1
                     ocr_text, method, conf = ocr_png(pg.get_pixmap(dpi=dpi).tobytes("png"), llm)
                     pages.append(Page(ocr_text, i, method, page_confidence(ocr_text, conf)))
         return pages

@@ -1,4 +1,4 @@
-# 🤖 Agent Kit — lean AI agents for any use, plus RAG, OCR, Chat & AUC Library divisions
+# Agent Kit: lean AI agents for any use, plus RAG, OCR, chat and AUC Library divisions
 
 19 small, CI-validated agent definitions and a runnable **OCR → hybrid RAG → guarded chat** app for The American University in Cairo (AUC) Libraries, in Arabic, English and Franco-Arabic.
 
@@ -28,20 +28,20 @@ Then ask: *"Use agent-architect to make me an agent that triages support emails.
 
 | Plugin | Agent | Model | Use when… |
 |---|---|---|---|
-| 🧩 core | `agent-architect` | inherit | you need a **new agent for any purpose** |
+| core | `agent-architect` | inherit | you need a **new agent for any purpose** |
 | | `orchestrator` | inherit | a task needs several agents |
 | | `prompt-engineer` | inherit | a prompt is weak, inconsistent or costly |
 | | `evaluator` | sonnet | you need to prove it works (golden tests, CI thresholds) |
 | | `mcp-tool-builder` | inherit | an agent needs safe access to data or actions over MCP |
-| 🔎 rag | `rag-architect` | inherit | designing a RAG system (hybrid + RRF + rerank + citations) |
+| rag | `rag-architect` | inherit | designing a RAG system (hybrid + RRF + rerank + citations) |
 | | `ocr-document-engineer` | sonnet | scanned or photographed PDFs, broken Arabic text layers |
 | | `rag-ingestion-engineer` | sonnet | sentence-aware chunking, metadata, injection quarantine |
 | | `rag-retrieval-engineer` | inherit | retrieval returns wrong or missing chunks |
 | | `rag-evaluator` | sonnet | recall@k, MRR, citations, faithfulness |
-| 💬 chat | `chatbot-architect` | inherit | building a chat assistant |
+| chat | `chatbot-architect` | inherit | building a chat assistant |
 | | `chat-guardrails` | inherit | hardening against the OWASP Top 10 for LLM apps |
 | | `arabic-english-localizer` | sonnet | Arabic (MSA/Egyptian/Franco-Arabic) + English users |
-| 🏛️ auc-library | `auc-library-concierge` | haiku | front desk: borrowing, access, hours, services |
+| auc-library | `auc-library-concierge` | haiku | front desk: borrowing, access, hours, services |
 | | `auc-research-assistant` | sonnet | sources, databases, search strings, citations |
 | | `auc-catalog-navigator` | haiku | a specific item, call number, availability (live connector) |
 | | `auc-special-collections-guide` | sonnet | rare books, archives, manuscripts, photographs |
@@ -60,11 +60,11 @@ export ANTHROPIC_API_KEY=sk-...                           # optional: offline, a
 agentkit --index data/index.db ingest knowledge/auc-library/pages   # SQLite FTS5 index (or data/index.json in memory)
 agentkit --index data/index.db serve                      # http://127.0.0.1:8000 · staff page /admin · metrics /metrics
 agentkit --index data/index.db ask "ممكن الخريجين يستعيروا كتب؟" --debug
-agentkit eval --min-pass 0.95 --min-recall 0.9            # 40 golden questions
+agentkit eval --min-pass 0.95 --min-recall 0.9            # 40 golden questions (--set dev | heldout)
 agentkit feedback-report                                  # unanswered + 👎 questions → test-set candidates
 agentkit redteam                                          # 30 attacks (EN/AR/Franco, direct + planted in documents)
 agentkit export-accessible scan.pdf -o scan.html          # OCR → accessible HTML
-pytest -q                                                 # 121 tests incl. a real-browser WCAG check
+pytest -q                                                 # 137 tests incl. a real-browser WCAG check
 ```
 
 ```
@@ -81,8 +81,10 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 | Check | Result |
 |---|---|
 | Golden questions (JSON and SQLite back ends) | **40/40**, recall@5 = 1.0, MRR = 1.0 (23 EN, 12 Egyptian/MSA Arabic, 5 Franco-Arabic) |
+| Held-out questions, never tuned on (offline answerer) | **11/20** on the blind run, 16/20 after general fixes, recall@5 1.0; details in the [evaluation log](docs/EVALUATION-LOG.md) |
+| OCR bench (Tesseract) | CER 0.000 on clean/rotated/blurred/noisy EN and AR; diacritized Arabic goes to the correction queue |
 | Red-team (`agentkit redteam`) | **30/30** attacks blocked |
-| Accessibility (axe-core in Chromium, WCAG 2.2 A/AA) | **0 violations**, English and Arabic RTL, including a streamed answer |
+| Accessibility (axe-core in Chromium, WCAG 2.2 A/AA) | **0 violations** on chat, staff, request and privacy pages, English and Arabic RTL |
 | Search latency (SQLite FTS5) | p95 **97 ms @ 20k** chunks, **232 ms @ 100k** |
 | HTTP load (20 clients, offline LLM, cache off) | **218 req/s**, p95 105 ms, 0 errors |
 | Supply chain | `pip-audit` 0 vulnerabilities · `bandit` 0 medium/high · hash-pinned lockfile · SBOM in CI |
@@ -97,9 +99,11 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 | Scale | SQLite FTS5 back end, optional Qdrant, answer cache, streaming, background incremental ingestion, Batch API contextualisation, Prometheus metrics with cost |
 | Accessibility | WCAG 2.2 AA chat, staff and request pages, full Arabic UI, voice input, embeddable widget, WhatsApp channel, accessible HTML export of scans |
 | Library services ([plan 4](docs/plans/04-review-features.md)) | Feedback loop, saved chats/searches, live hours and rooms (LibCal), pinned notices + effective dates, real handoff tickets (LibAnswers/email), subject-librarian routing and consultations, read-only Alma account answers, finding aids (EAD) and rare-materials request form |
-| OCR quality | Word-box layout (columns, RTL, tables), per-page confidence, image clean-up, handwriting notes, staff correction queue, view-the-scan links |
+| OCR quality | Word-box layout (columns, RTL, tables), per-page confidence, image clean-up, two-pass Tesseract, handwriting notes, staff correction queue, view-the-scan links, searchable-PDF export |
+| Resilience and operations ([plan 5](docs/plans/05-review-round1.md)) | Outage and budget fallback to search-results-only answers, handoff never lost, SLA escalation, index snapshots and rollback, freshness report, self-service data export and deletion |
+| Answer style | [antislop](https://github.com/miqdadbadjuber/anti-slop) rules: no greetings, praise, closing offers or buzzwords in answers (EN and AR); checked in every eval |
 
-Plans and evidence: [research](docs/research/FINDINGS.md) → [plan 2](docs/plans/02-enhancement-plan.md) → [plan 3: secure, scale, accessible](docs/plans/03-scale-secure-accessible.md). Operations: [deploy](docs/DEPLOY.md) · [staff guide](docs/STAFF-GUIDE.md) · [data policy](docs/DATA-POLICY.md) · [العربية](README.ar.md).
+Plans and evidence: [research](docs/research/FINDINGS.md) → [plan 2](docs/plans/02-enhancement-plan.md) → [plan 3: secure, scale, accessible](docs/plans/03-scale-secure-accessible.md). Operations: [deploy](docs/DEPLOY.md) · [pilot plan](docs/PILOT.md) · [runbook](docs/RUNBOOK.md) · [staff guide](docs/STAFF-GUIDE.md) · [data policy](docs/DATA-POLICY.md) · [العربية](README.ar.md).
 
 ## AUC chatbot: path to production
 1. **Confirm the facts.** [`knowledge/auc-library/facts.md`](knowledge/auc-library/facts.md) and the [seed pages](knowledge/auc-library/pages/) were paraphrased from search extracts of official pages, each with its URL. Confirm them, and fill every `[VERIFY]` (hours, catalog system, databases).
@@ -127,7 +131,7 @@ scripts/                        install.sh, lint-agents.sh (agents, skills, mark
 ```
 
 ## Roadmap
-LibCal hours connector · OAI-PMH harvest of Knowledge Fountain · speech-to-text for WhatsApp voice notes · Postgres/pgvector back end for multi-writer deployments.
+OAI-PMH harvest of Knowledge Fountain · speech-to-text for WhatsApp voice notes · Postgres/pgvector back end for multi-writer deployments.
 
 ## License
 MIT. The persona format is adapted from agency-agents (MIT, © msitarzewski).

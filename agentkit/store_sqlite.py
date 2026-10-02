@@ -41,7 +41,7 @@ class SqliteIndex(BaseIndex):
         self.db.executescript(SCHEMA)
         self.vectors = vectors  # optional vector store adapter (upsert/delete/search)
 
-    # --- storage -------------------------------------------------------------------------------------------
+    # Storage
     def _bump(self):
         self.db.execute("INSERT OR REPLACE INTO meta VALUES ('version', ?)", (uuid.uuid4().hex,))
 
@@ -120,7 +120,7 @@ class SqliteIndex(BaseIndex):
     def save(self, path: str | Path = ""):
         self.db.commit()  # already durable; kept for interface parity with the JSON index
 
-    # --- ranking -------------------------------------------------------------------------------------------
+    # Ranking
     def _selective(self, vocab: str, terms: list[str], keep: int, max_df: float = 0.2) -> list[str]:
         """Keep the rarest terms: very common ones add little to BM25 but force scoring most of the table."""
         if len(terms) <= 3:

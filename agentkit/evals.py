@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from . import ROOT
+from . import style
 from .agents import load_all
 from .arabic import normalize
 from .chat import LibraryChat
@@ -50,6 +51,8 @@ def run_golden(chat: LibraryChat, path: Path = GOLDEN) -> dict:
         facts = [f.strip() for f in row.get("facts", "").split(";") if f.strip()]
         if facts:
             checks["facts"] = all(normalize(f) in normalize(ans.text) for f in facts)
+        if ans.mode in ("answer", "strategy"):
+            checks["style"] = not style.findings(ans.text)
         if chat.llm.live and row["expect"] == "answer" and ans.quotes:
             quotes = "\n".join(q for qs in ans.quotes.values() for q in qs)
             verdict = chat.llm.complete("You check a library chatbot for faithfulness. Reply PASS if every claim in "

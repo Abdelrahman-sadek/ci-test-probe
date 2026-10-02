@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 from . import ROOT
 
-# ---------------------------------------------------------------- PII (LLM02)
+# PII (LLM02)
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 _NATIONAL_ID = re.compile(r"\b[23]\d{13}\b")  # Egyptian national ID: 14 digits starting with century digit
 _CARD = re.compile(r"\b(?:\d[ -]?){13,19}\b")
@@ -50,7 +50,7 @@ def pseudonym(user: str) -> str:
     return hmac.new(key, user.encode(), hashlib.sha256).hexdigest()[:16] if user else "anonymous"
 
 
-# ---------------------------------------------------------------- rate limiting (LLM10)
+# Rate limiting (LLM10)
 class RateLimiter:
     """Token bucket per key (user or IP). `rate` like "30/min", "5/s", "500/hour"."""
 
@@ -74,7 +74,7 @@ class RateLimiter:
             return False, (1 - tokens) / self.per_second
 
 
-# ---------------------------------------------------------------- authentication + access (LLM08)
+# Authentication + access (LLM08)
 @dataclass
 class Principal:
     user: str = ""
@@ -160,7 +160,7 @@ def authenticate(headers: dict[str, str]) -> Principal:
     return principal
 
 
-# ---------------------------------------------------------------- encrypted logs + retention
+# Encrypted logs + retention
 class SecureLog:
     """Append-only JSONL log. Rows are PII-redacted and pseudonymous; with AGENTKIT_LOG_KEY (a Fernet key)
     each row is encrypted at rest. Fernet tokens carry their timestamp, so retention needs no decryption."""
@@ -217,7 +217,7 @@ class SecureLog:
         return removed
 
 
-# ---------------------------------------------------------------- ingestion allowlist (LLM04)
+# Ingestion allowlist (LLM04)
 def allowed_domains() -> list[str]:
     env = os.getenv("AGENTKIT_ALLOWED_DOMAINS")
     if env is not None:

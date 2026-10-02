@@ -46,7 +46,7 @@ class AppDB:
             from cryptography.fernet import Fernet
             self._f = Fernet(key.encode() if isinstance(key, str) else key)
 
-    # --- encryption helpers -----------------------------------------------------------------------------
+    # Encryption helpers
     def _enc(self, text: str) -> str:
         return self._f.encrypt(text.encode()).decode() if self._f else text
 
@@ -57,7 +57,7 @@ class AppDB:
         with self.lock, self.db:
             return self.db.execute(sql, args)
 
-    # --- 1. feedback + unanswered questions -------------------------------------------------------------
+    # 1. feedback + unanswered questions
     def add_feedback(self, answer_id: str, rating: int, reason: str = "", question: str = "", mode: str = "",
                      lang: str = "", user: str = "") -> str:
         fid = uuid.uuid4().hex[:12]
@@ -90,7 +90,7 @@ class AppDB:
                 out.append({"question": q, "lang": row.get("lang", ""), "seen_as": row.get("mode", "")})
         return out
 
-    # --- 2. conversations + saved searches (signed-in users only) ---------------------------------------
+    # 2. conversations + saved searches (signed-in users only)
     def add_turn(self, user: str, conversation: str | None, role: str, content: str) -> str:
         conversation = conversation or uuid.uuid4().hex[:12]
         owner = self.db.execute("SELECT user FROM conversations WHERE id=?", (conversation,)).fetchone()
@@ -130,7 +130,7 @@ class AppDB:
     def delete_saved(self, user: str, sid: str) -> bool:
         return self._exec("DELETE FROM saved WHERE id=? AND user=?", (sid, pseudonym(user))).rowcount > 0
 
-    # --- 4. pinned notices (closures, exam hours, outages) ----------------------------------------------
+    # 4. pinned notices (closures, exam hours, outages)
     def add_notice(self, title: str, body: str, url: str = "", valid_from: str = "", valid_to: str = "",
                    priority: str = "urgent", lang: str = "en") -> str:
         nid = uuid.uuid4().hex[:12]
@@ -153,7 +153,7 @@ class AppDB:
     def delete_notice(self, nid: str) -> bool:
         return self._exec("DELETE FROM notices WHERE id=?", (nid,)).rowcount > 0
 
-    # --- 9 / 12. handoff tickets and special-collections requests ----------------------------------------
+    # 9 / 12. handoff tickets and special-collections requests
     def add_ticket(self, kind: str, payload: dict, routed_to: str, user: str = "", status: str = "queued") -> str:
         tid = uuid.uuid4().hex[:10].upper()
         self._exec("INSERT INTO tickets VALUES (?,?,?,?,?,?,?)",
@@ -174,7 +174,52 @@ class AppDB:
     def set_ticket_status(self, tid: str, status: str) -> bool:
         return self._exec("UPDATE tickets SET status=? WHERE id=?", (status, tid)).rowcount > 0
 
-    # --- retention ---------------------------------------------------------------------------------------
+    # Staff operations: SLA and workload
+    def overdue_tickets(self, hours: float | None = None, now: float | None = None) -> list[dict]:
+        hours = hours if hours is not None else float(os.getenv("AGENTKIT_TICKET_SLA_HOURS", "48"))
+        cutoff = (now or time.time()) - hours * 3600
+        return [t for t in self.tickets() if t["status"] in ("queued", "sent") and t["ts"] < cutoff]
+
+    def workload(self, now: float | None = None) -> dict:
+        """Queue depth and age per subject queue, so staffing can follow demand."""
+        now = now or time.time()
+        out = {}
+        for t in self.tickets():
+            q = out.setdefault(t["routed_to"], {"open": 0, "closed": 0, "oldest_open_hours": 0.0, "kinds": {}})
+            q["kinds"][t["kind"]] = q["kinds"].get(t["kind"], 0) + 1
+            if t["status"] in ("answered", "closed"):
+                q["closed"] += 1
+            else:
+                q["open"] += 1
+                q["oldest_open_hours"] = max(q["oldest_open_hours"], round((now - t["ts"]) / 3600, 1))
+        return out
+
+    # Data-subject rights (Egypt PDPL 151/2020: access and erasure)
+    def export_user(self, user: str) -> dict:
+        pid = pseudonym(user)
+        convs = [{"id": c["id"], "title": c["title"], "turns": self.conversation(user, c["id"])}
+                 for c in self.conversations(user)]
+        fb = self.db.execute("SELECT ts, rating, reason, question FROM feedback WHERE user=?", (pid,)).fetchall()
+        tix = self._tickets_of(pid)
+        return {"conversations": convs, "saved": self.saved(user),
+                "feedback": [{"ts": ts, "rating": r, "reason": self._dec(re_), "question": self._dec(q)} for ts, r, re_, q in fb],
+                "tickets": tix}
+
+    def _tickets_of(self, pid: str) -> list[dict]:
+        rows = self.db.execute("SELECT id, ts, kind, status, routed_to, payload FROM tickets WHERE user=?", (pid,))
+        return [{"id": i, "ts": ts, "kind": k, "status": s_, "routed_to": r, **json.loads(self._dec(p))}
+                for i, ts, k, s_, r, p in rows]
+
+    def delete_user(self, user: str) -> int:
+        pid, removed = pseudonym(user), 0
+        with self.lock, self.db:
+            for (cid,) in self.db.execute("SELECT id FROM conversations WHERE user=?", (pid,)).fetchall():
+                removed += self.db.execute("DELETE FROM turns WHERE conversation=?", (cid,)).rowcount
+            for table in ("conversations", "saved", "feedback", "unanswered", "tickets"):
+                removed += self.db.execute(f"DELETE FROM {table} WHERE user=?", (pid,)).rowcount  # nosec B608 — fixed names
+        return removed
+
+    # Retention
     def purge(self, now: float | None = None, days: int | None = None) -> int:
         days = days or int(os.getenv("AGENTKIT_LOG_RETENTION_DAYS", "30"))
         cutoff = (now or time.time()) - days * 86400

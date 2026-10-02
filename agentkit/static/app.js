@@ -11,7 +11,11 @@ const STR = {
        consent: "Library staff may contact me at this email about my question", send2: "Send",
        ticket: "Sent. Reference", consult: "Book a consultation", contact: "Contact", request: "Request rare materials",
        renew: "Renew", renewed: "Renewal requested.", mine: "My saved items and past chats", savedh: "Saved",
-       pasth: "Past conversations", signin: "Sign in with your AUC account to see this.", scan: "View scanned page"},
+       pasth: "Past conversations", signin: "Sign in with your AUC account to see this.", scan: "View scanned page",
+       degraded: "The AI service is busy, so this answer shows the most relevant passage from library sources.",
+       related: "You may also ask about:", referral: "Contact the", privacy: "Privacy: how your questions are handled",
+       download: "Download my data", erase: "Delete my data", confirm: "Delete all your saved chats, searches and feedback?",
+       erased: "Your data was deleted."},
   ar: {title: "مساعد مكتبة الجامعة الأمريكية", skip: "انتقل إلى مربع السؤال", label: "سؤالك",
        placeholder: "اسأل عن الاستعارة أو الكتب النادرة أو الرسائل العلمية…", send: "اسأل", voice: "اسأل بالصوت",
        note: "عرض تجريبي مستقل وغير تابع للجامعة. الإجابات من مصادر موثقة فقط. اسأل بالعربية أو الإنجليزية أو الفرانكو.",
@@ -23,7 +27,11 @@ const STR = {
        consent: "أوافق على أن يتواصل معي موظفو المكتبة عبر هذا البريد بخصوص سؤالي", send2: "إرسال",
        ticket: "تم الإرسال. رقم الطلب", consult: "احجز استشارة", contact: "تواصل", request: "طلب مواد نادرة",
        renew: "تجديد", renewed: "تم طلب التجديد.", mine: "محفوظاتي ومحادثاتي السابقة", savedh: "المحفوظات",
-       pasth: "المحادثات السابقة", signin: "سجّل الدخول بحساب الجامعة لعرض هذا.", scan: "عرض الصفحة الممسوحة"},
+       pasth: "المحادثات السابقة", signin: "سجّل الدخول بحساب الجامعة لعرض هذا.", scan: "عرض الصفحة الممسوحة",
+       degraded: "خدمة الذكاء الاصطناعي مشغولة، لذلك تعرض هذه الإجابة أنسب فقرة من مصادر المكتبة.",
+       related: "يمكنك أيضًا السؤال عن:", referral: "تواصل مع", privacy: "الخصوصية: كيف نتعامل مع أسئلتك",
+       download: "تنزيل بياناتي", erase: "حذف بياناتي", confirm: "هل تريد حذف كل محادثاتك وعمليات البحث والملاحظات المحفوظة؟",
+       erased: "تم حذف بياناتك."},
 };
 const $ = (id) => document.getElementById(id);
 const log = $("log"), form = $("f"), q = $("q"), status = $("status");
@@ -124,6 +132,10 @@ function actionsRow(box, d, question) {
       const b = button(t("renew") + ": " + a.title);
       b.addEventListener("click", async () => { try { await post("/api/account/renew", {loan_id: a.loan_id}); status.textContent = t("renewed"); b.disabled = true; } catch (e) { status.textContent = e.message; } });
       box.append(b);
+    } else if (a.type === "referral") {
+      const u = safeUrl(a.url), txt = t("referral") + " " + a.office;
+      if (u) { const link = el("a", "", txt); link.href = u; link.target = "_blank"; link.rel = "noopener noreferrer"; box.append(el("p", ""), link); }
+      else box.append(el("p", "", txt));
     } else if (a.type === "signin") {
       box.append(el("p", "note", t("signin")));
     }
@@ -132,6 +144,8 @@ function actionsRow(box, d, question) {
 
 function render(box, d, question) {
   box.textContent = "";
+  const banner = $("banner");
+  if (d.degraded) { banner.textContent = t("degraded"); banner.hidden = false; } else { banner.hidden = true; }
   box.append(el("div", "chip", d.agent + " · " + d.mode), el("div", "", d.answer));
   if (d.sources && d.sources.length) {
     const list = el("ol", "src"); list.setAttribute("aria-label", t("sources"));
@@ -155,6 +169,11 @@ function render(box, d, question) {
     box.append(det);
   }
   actionsRow(box, d, question);
+  if (d.related && d.related.length) {
+    const rel = el("div", "row actions"); rel.append(el("span", "note", t("related")));
+    for (const topic of d.related) { const b = button(topic); b.addEventListener("click", () => ask(topic)); rel.append(b); }
+    box.append(rel);
+  }
   if (d.id) box.append(feedbackRow(d, question));
 }
 
@@ -223,6 +242,18 @@ async function loadMine(panel) {
       li.append(b); ul2.append(li);
     }
     panel.append(ul2);
+    const rights = el("div", "row"), dl = button(t("download")), er = button(t("erase"));
+    dl.addEventListener("click", async () => {
+      const data = await fetch("/api/me/data").then((r) => r.json());
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: "application/json"}));
+      a.download = "my-library-assistant-data.json"; a.click();
+    });
+    er.addEventListener("click", async () => {
+      if (!window.confirm(t("confirm"))) return;
+      await fetch("/api/me/data", {method: "DELETE"}); status.textContent = t("erased"); loadMine(panel);
+    });
+    rights.append(dl, er); panel.append(rights);
   } catch (e) { panel.append(el("p", "", t("error"))); }
 }
 

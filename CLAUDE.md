@@ -6,4 +6,4 @@
 - To build a new agent for any purpose, use the `agent-architect` agent.
 - The Python app is in `agentkit/`: `rag.py` (ingestion, provenance, `BaseIndex`), `store_sqlite.py`, `chat.py` (guardrails, routing, cache, streaming), `security.py` (auth, PII, rate limits, encrypted logs, allowlist), `api.py` (FastAPI), `appdb.py` (feedback, history, notices, tickets), `services.py` (handoff, librarian routing), `connectors.py` (Primo, LibCal, Alma), `ocr.py` (layout, confidence, preprocessing, EAD), `static/` (accessible bilingual UI). Offline it uses a deterministic extractive stand-in; live mode needs `ANTHROPIC_API_KEY`.
 - Never log raw questions or identities: use `security.redact` and `security.pseudonym`. Model output is rendered as text only.
-- After changing dependencies, regenerate the lockfile: `pip-compile --generate-hashes --strip-extras --extra server --extra mcp -o requirements.lock pyproject.toml`.
+- After changing dependencies, regenerate the lockfile: `pip-compile --generate-hashes --strip-extras --extra server --extra mcp --extra tesseract -o requirements.lock pyproject.toml`.
