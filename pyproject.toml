@@ -1,6 +1,6 @@
 [project]
 name = "agentkit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Lean AI agents + OCR + hybrid RAG + guarded AUC Library chat (Arabic/English)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -8,16 +8,22 @@ requires-python = ">=3.10"
 dependencies = ["anthropic>=1.0", "pymupdf>=1.24"]
 
 [project.optional-dependencies]
+server = ["fastapi>=0.110", "uvicorn>=0.29", "pyjwt[crypto]>=2.8", "cryptography>=42"]
 mcp = ["mcp>=1.2"]
+qdrant = ["qdrant-client>=1.10"]
 dense = ["sentence-transformers>=3"]          # BGE-M3 embeddings + bge-reranker-v2-m3 (AGENTKIT_DENSE=1 / AGENTKIT_RERANK=1)
 tesseract = ["pytesseract", "pillow"]
-dev = ["pytest", "mcp>=1.2"]
+dev = ["pytest", "httpx", "mcp>=1.2", "fastapi>=0.110", "uvicorn>=0.29", "pyjwt[crypto]>=2.8", "cryptography>=42", "qdrant-client>=1.10"]
+a11y = ["playwright>=1.45", "axe-playwright-python>=0.1.4"]
 
 [project.scripts]
 agentkit = "agentkit.cli:main"
 
 [tool.setuptools]
 packages = ["agentkit"]
+
+[tool.setuptools.package-data]
+agentkit = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

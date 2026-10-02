@@ -1,0 +1,16 @@
+# HTTPS reverse proxy. For SSO, put oauth2-proxy (or the university's SAML/OIDC gateway) in front and set
+# AGENTKIT_AUTH=proxy, or have clients send OIDC bearer tokens and set AGENTKIT_AUTH=jwt.
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	@admin path /admin* /metrics
+	# Restrict staff routes to the campus network (replace with AUC ranges) [VERIFY]
+	# @outside not remote_ip 10.0.0.0/8
+	request_body {
+		max_size 30MB
+	}
+	reverse_proxy app:8000
+}

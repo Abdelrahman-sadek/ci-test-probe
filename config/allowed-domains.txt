@@ -1,0 +1,2 @@
+# Web sources may only be ingested from these domains (and their subdomains), over https.
+aucegypt.edu

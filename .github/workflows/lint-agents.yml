@@ -1,8 +1,9 @@
 name: Agents CI
 on:
   push:
-    paths: ["plugins/**", ".claude-plugin/**", "agentkit/**", "scripts/**", "tests/**", "evals/**", "knowledge/**", "samples/**", "pyproject.toml", ".github/workflows/**"]
   pull_request:
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,12 +17,43 @@ jobs:
       - run: pip install -e ".[dev]"
       - name: Lint agents, skills, marketplace
         run: scripts/lint-agents.sh
-      - run: pytest -q
-      - name: End-to-end offline eval (fails below thresholds)
+      - name: Unit, API, security and scale tests
+        run: pytest -q --ignore=tests/test_a11y.py
+      - name: End-to-end offline eval + red-team (fail below thresholds)
         run: |
           agentkit ingest knowledge/auc-library/pages
           agentkit eval --min-pass 0.95 --min-recall 0.9
+          agentkit redteam
+          agentkit --index data/index.db ingest knowledge/auc-library/pages
+          agentkit --index data/index.db eval --min-pass 0.95 --min-recall 0.9
           agentkit test-agents
+      - name: Search latency (SQLite, 20k chunks, p95 ≤ 300 ms)
+        if: matrix.python == '3.12'
+        run: python scripts/bench_search.py --chunks 20000 --backends sqlite --target-p95-ms 300
+  accessibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install -e ".[dev,a11y]" && python -m playwright install --with-deps chromium
+      - name: axe-core WCAG 2.2 AA in Chromium (English + Arabic RTL)
+        run: pytest -q tests/test_a11y.py
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pip-audit bandit cyclonedx-bom
+      - name: Vulnerability audit of the locked dependencies
+        run: pip-audit -r requirements.lock
+      - name: Static analysis (bandit, medium+)
+        run: bandit -q -r agentkit -ll
+      - name: SBOM (CycloneDX)
+        run: cyclonedx-py requirements requirements.lock -o sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with: {name: sbom, path: sbom.cdx.json}
   plugin:
     runs-on: ubuntu-latest
     steps:
@@ -36,3 +68,13 @@ jobs:
         run: |
           HOME=$(mktemp -d) scripts/install.sh claude
           scripts/install.sh cursor && scripts/install.sh agents-md
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image and smoke-test /healthz
+        run: |
+          docker build -t agentkit .
+          docker run -d --name ak -p 8000:8000 agentkit
+          for i in $(seq 1 30); do curl -fsS localhost:8000/healthz && break; sleep 2; done
+          curl -fsS -X POST localhost:8000/api/ask -H 'Content-Type: application/json' -d '{"question":"Can alumni borrow books?"}'

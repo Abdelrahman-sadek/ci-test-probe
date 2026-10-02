@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from agentkit.chat import LibraryChat, guard, redact, route
+from agentkit.chat import LibraryChat, guard, route
+from agentkit.security import SecureLog, redact
 from agentkit.connectors import PrimoCatalog
 from agentkit.llm import FakeLLM
 
@@ -61,14 +62,15 @@ def test_documents_are_data_not_instructions(chat):
 
 
 def test_redact_pii():
-    out = redact("mail me at sara@aucegypt.edu, ID 29801011234567, phone 01012345678")
+    out = redact("mail me at sara@aucegypt.edu, ID 29801011234567, phone 01012345678, ISBN 9780385264662")
+    assert "9780385264662" in out  # ISBNs are not Luhn-valid cards, so catalog searches keep them
     assert "[EMAIL]" in out and "[NATIONAL_ID]" in out and "[PHONE]" in out and "sara@" not in out
 
 
 def test_log_is_redacted(tmp_path, seed_index):
     log = tmp_path / "log.jsonl"
     LibraryChat(seed_index, FakeLLM(), log_path=log).ask("my email is sara@aucegypt.edu, can alumni borrow books?")
-    row = json.loads(log.read_text().splitlines()[0])
+    row = SecureLog(log).read()[0]
     assert "[EMAIL]" in row["q"] and row["mode"] == "answer"
 
 

@@ -1,0 +1,11 @@
+{
+  "_comment": "Maps identity-provider groups to document access levels. Documents set `access:` in front matter (default public). Group names are examples — replace with AUC's real directory groups [VERIFY].",
+  "default": ["public"],
+  "groups": {
+    "students": ["public", "student"],
+    "alumni": ["public", "alumni"],
+    "faculty": ["public", "student", "faculty"],
+    "library-staff": ["public", "student", "faculty", "staff"],
+    "library-staff-admin": ["public", "student", "faculty", "staff"]
+  }
+}

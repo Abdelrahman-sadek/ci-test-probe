@@ -1,9 +1,12 @@
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+os.environ.setdefault("AGENTKIT_ALLOWED_DOMAINS", "")  # fixtures use example URLs; allowlist tested explicitly
+os.environ.setdefault("AGENTKIT_LOG_SALT", "test-salt")
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 

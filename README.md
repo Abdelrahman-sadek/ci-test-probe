@@ -48,41 +48,55 @@ Then ask: *"Use agent-architect to make me an agent that triages support emails.
 | | `auc-library-rag-builder` | inherit | building the knowledge base behind the AUC agents |
 | | `library-systems-integrator` | inherit | Primo/Alma, LibCal, LibAnswers, OAI-PMH connectors |
 
-## Run the AUC Library assistant (OCR + RAG + chat)
-
-```
-question ─► guardrails ─► route to AUC agent ─► expand (glossary · Franco-Arabic→Arabic · LLM keywords)
-         ─► hybrid retrieval: BM25 + char 3-grams (+ BGE-M3) ─► RRF fusion (+ bge-reranker) ─► relevance check
-         ─► Claude with native search_result citations ─► answer · strategy · handoff · refuse
-documents ─► text layer or OCR (Claude vision / Tesseract) ─► Arabic normalisation ─► sentence-aware chunks
-          ─► injection quarantine · access labels ─► index        live data (Primo catalog) ─► tool, never indexed
-```
+## Run the AUC Library assistant
 
 ```bash
-pip install -e ".[dev]"                        # add ".[dense]" for BGE-M3 + reranker
-export ANTHROPIC_API_KEY=sk-...                # optional: offline, a deterministic extractive stand-in runs everything
-agentkit ingest knowledge/auc-library/pages    # seed corpus from official AUC pages (+ any folder of PDFs/scans/HTML)
-agentkit ask "Can alumni borrow books?" --debug
-agentkit ask "ممكن الخريجين يستعيروا كتب؟"
-agentkit chat                                  # terminal chat, keeps follow-up context
-agentkit serve                                 # web chat at http://127.0.0.1:8000 (right-to-left aware, shows sources)
-agentkit eval --min-pass 0.95 --min-recall 0.9 # 27 golden questions → data/eval-report.md/.json
-agentkit test-agents                           # smoke-test all 19 agents (live: Haiku grades each reply)
-claude mcp add agentkit -- agentkit --index "$PWD/data/index.json" mcp   # tools + every agent as an MCP prompt
-pytest -q                                      # 62 tests: Arabic, OCR, RAG/RRF, guardrails, live-API shapes, MCP, web
+cp .env.example .env && docker compose up -d   # HTTPS chat + staff page + API (see docs/DEPLOY.md)
+```
+or locally:
+```bash
+pip install -e ".[dev]"                                   # add ".[dense,qdrant]" for BGE-M3 + Qdrant
+export ANTHROPIC_API_KEY=sk-...                           # optional: offline, a deterministic extractive stand-in runs everything
+agentkit --index data/index.db ingest knowledge/auc-library/pages   # SQLite FTS5 index (or data/index.json in memory)
+agentkit --index data/index.db serve                      # http://127.0.0.1:8000 · staff page /admin · metrics /metrics
+agentkit --index data/index.db ask "ممكن الخريجين يستعيروا كتب؟" --debug
+agentkit eval --min-pass 0.95 --min-recall 0.9            # 27 golden questions
+agentkit redteam                                          # 30 attacks (EN/AR/Franco, direct + planted in documents)
+agentkit export-accessible scan.pdf -o scan.html          # OCR → accessible HTML
+pytest -q                                                 # 103 tests incl. a real-browser WCAG check
 ```
 
-**Offline results:** 27/27 golden questions pass; recall@5 = 1.0 and MRR = 1.0 in English, Arabic and Franco-Arabic.
+```
+question ─► auth (OIDC/JWT · SSO proxy) ─► rate limit ─► guardrails ─► cache (index version × access level)
+         ─► route to AUC agent ─► expand (glossary · Franco-Arabic→Arabic) ─► hybrid retrieval filtered by access
+            (BM25 + trigram via SQLite FTS5 · optional BGE-M3/Qdrant · RRF · optional reranker) ─► relevance check
+         ─► redact PII ─► Claude with native citations, streamed ─► answer · strategy · handoff · refuse ─► encrypted log
+documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) ─► text layer, or OCR if scanned/garbled
+          ─► Arabic glyph fix + normalisation ─► sentence chunks ─► injection quarantine ─► SHA-256 provenance
+          ─► changed sources held for staff review ─► index        live data (Primo) ─► tool, never indexed
+```
 
-| Area | What it does | Evidence |
-|---|---|---|
-| Arabic (`agentkit/arabic.py`) | NFKC (fixes PDF glyphs like `ﻣﻮﺍﻋﻴﺪ`), ٠-٩→0-9, Light10 stemming, sentence splitting on `؟ ؛`, Franco-Arabic→Arabic candidates | Larkey Light10; arXiv 2506.06339 |
-| Retrieval (`agentkit/rag.py`) | BM25 + character n-grams (+ dense) fused with RRF k=60; optional cross-encoder rerank; contextual retrieval (`--contextualize`) | Anthropic Contextual Retrieval; RRF |
-| Answers (`agentkit/llm.py`) | `claude-opus-5-5` at low effort, native `search_result` citations with quotes, refusal handling + server-side fallbacks; `claude-haiku-4-5` for rewriting and grading | Claude API docs |
-| Safety (`agentkit/chat.py`, `web.py`) | Mapped to OWASP LLM 2025: injection quarantine (01/04), PII-redacted logs (02), safe output rendering + CSP (05), access filters (08), cited-only answers (09), size caps (10) | OWASP Top 10 for LLM |
-| OCR (`agentkit/ocr.py`) | Text layer first, OCR only scanned pages; Claude vision by default (vision-language models beat classic OCR by ~60% CER on Arabic) | KITAB-Bench, QARI-OCR |
+### Measured
+| Check | Result |
+|---|---|
+| Golden questions (JSON and SQLite back ends) | **27/27**, recall@5 = 1.0, MRR = 1.0 (EN, AR, Franco-Arabic) |
+| Red-team (`agentkit redteam`) | **30/30** attacks blocked |
+| Accessibility (axe-core in Chromium, WCAG 2.2 A/AA) | **0 violations**, English and Arabic RTL, including a streamed answer |
+| Search latency (SQLite FTS5) | p95 **97 ms @ 20k** chunks, **232 ms @ 100k** |
+| HTTP load (20 clients, offline LLM, cache off) | **218 req/s**, p95 105 ms, 0 errors |
+| Supply chain | `pip-audit` 0 vulnerabilities · `bandit` 0 medium/high · hash-pinned lockfile · SBOM in CI |
 
-Models are configurable with `AGENTKIT_MODEL`, `AGENTKIT_MODEL_FAST` and `AGENTKIT_EFFORT`. Other settings: `AGENTKIT_DENSE=1` / `AGENTKIT_RERANK=1` (optional extras), `AGENTKIT_PRIMO_URL/VID/KEY` (live catalog), `AGENTKIT_LOG=data/chat.jsonl` (redacted log).
+### Security, scale and accessibility
+| Area | What it does |
+|---|---|
+| Identity & access | OIDC/JWT (JWKS) or SSO-proxy sign-in; directory groups → document access levels (`config/access.json`); admin role |
+| Data protection | Questions redacted before the model; pseudonymous, Fernet-encrypted logs; 30-day retention; per-user deletion; [data policy](docs/DATA-POLICY.md) |
+| Poisoning & injection | https domain allowlist, SHA-256 provenance, review queue for changed sources, quarantine of instruction-like or exfiltrating text, sandboxed parsing |
+| API hardening | Rate limits, body caps, strict CSP, security headers, admin-only staff APIs and metrics, HTTPS via Caddy |
+| Scale | SQLite FTS5 back end, optional Qdrant, answer cache, streaming, background incremental ingestion, Batch API contextualisation, Prometheus metrics with cost |
+| Accessibility | WCAG 2.2 AA chat and staff pages, full Arabic UI, voice input, embeddable widget, WhatsApp channel, accessible HTML export of scans |
+
+Plans and evidence: [research](docs/research/FINDINGS.md) → [plan 2](docs/plans/02-enhancement-plan.md) → [plan 3: secure, scale, accessible](docs/plans/03-scale-secure-accessible.md). Operations: [deploy](docs/DEPLOY.md) · [staff guide](docs/STAFF-GUIDE.md) · [data policy](docs/DATA-POLICY.md) · [العربية](README.ar.md).
 
 ## AUC chatbot: path to production
 1. **Confirm the facts.** [`knowledge/auc-library/facts.md`](knowledge/auc-library/facts.md) and the [seed pages](knowledge/auc-library/pages/) were paraphrased from search extracts of official pages, each with its URL. Confirm them, and fill every `[VERIFY]` (hours, catalog system, databases).
@@ -98,7 +112,10 @@ Models are configurable with `AGENTKIT_MODEL`, `AGENTKIT_MODEL_FAST` and `AGENTK
 plugins/<division>/agents/*.md  agents (Claude Code subagent format); each division is a plugin
 plugins/core/skills/            lean-agent-authoring (open Agent Skills standard)
 .claude-plugin/marketplace.json plugin marketplace (validated with `claude plugin validate .`)
-agentkit/                       OCR → hybrid RAG → guarded chat · CLI · web · MCP · connectors
+agentkit/                       OCR → hybrid RAG → guarded chat · FastAPI service · CLI · MCP · connectors
+agentkit/static/                accessible bilingual chat page, staff page, embeddable widget
+config/                         access levels per group, ingestion domain allowlist
+deploy/, Dockerfile, docker-compose.yml   container, Caddy TLS proxy, optional Qdrant
 knowledge/auc-library/          fact sheet, source inventory, seed pages (official URLs)
 evals/                          golden questions + per-agent smoke tests
 samples/fixtures/               fictional docs + scanned/Arabic PDFs for tests
@@ -107,7 +124,7 @@ scripts/                        install.sh, lint-agents.sh (agents, skills, mark
 ```
 
 ## Roadmap
-Vector database for 50k+ chunks · LibCal hours connector · OAI-PMH harvest of Knowledge Fountain · streaming answers in the web UI · Docker image.
+LibCal hours connector · OAI-PMH harvest of Knowledge Fountain · speech-to-text for WhatsApp voice notes · Postgres/pgvector back end for multi-writer deployments.
 
 ## License
 MIT. The persona format is adapted from agency-agents (MIT, © msitarzewski).

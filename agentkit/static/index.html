@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AUC Library Assistant</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<a class="skip" href="#q" data-i18n="skip">Skip to question box</a>
+<header class="bar">
+  <h1 data-i18n="title">AUC Library Assistant</h1>
+  <button type="button" id="lang" class="ghost" lang="ar">العربية</button>
+</header>
+<main id="main">
+  <p class="note" data-i18n="note">Independent demo, not affiliated with AUC. Answers come only from cited sources. Ask in English, Arabic or Franco-Arabic.</p>
+  <div id="log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation"></div>
+  <p id="status" role="status" class="sr-only"></p>
+  <form id="f" class="ask">
+    <label for="q" class="sr-only" data-i18n="label">Your question</label>
+    <input id="q" dir="auto" autocomplete="off" maxlength="1000" required data-i18n-placeholder="placeholder" placeholder="Ask about borrowing, rare books, theses…">
+    <button type="button" id="mic" class="ghost" hidden aria-pressed="false" data-i18n-label="voice" aria-label="Ask by voice">🎤</button>
+    <button type="submit" id="send" data-i18n="send">Ask</button>
+  </form>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

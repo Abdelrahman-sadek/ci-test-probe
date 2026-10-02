@@ -1,0 +1,35 @@
+# docker compose up -d   → https://$DOMAIN (Caddy obtains TLS automatically)
+# docker compose --profile dense up -d   → also starts Qdrant for dense vectors (needs the [dense,qdrant] extras)
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      AGENTKIT_TRUST_PROXY: "1"
+    volumes: ["agentkit-data:/data"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    expose: ["8000"]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes: ["./deploy/Caddyfile:/etc/caddy/Caddyfile:ro", "caddy-data:/data"]
+    depends_on: [app]
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: ["dense"]
+    restart: unless-stopped
+    volumes: ["qdrant-data:/qdrant/storage"]
+    expose: ["6333"]
+volumes:
+  agentkit-data:
+  caddy-data:
+  qdrant-data:
