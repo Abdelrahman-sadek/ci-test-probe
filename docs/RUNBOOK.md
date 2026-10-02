@@ -7,6 +7,8 @@
 - Before any release to real users: `agentkit preflight` must print "ready for real users". It blocks on [VERIFY] facts, missing AUC sign-off (`knowledge/auc-library/signoff.json`), evals not run live on the current index, open sign-in, spoofable proxy identity, unencrypted logs and the default log salt.
 
 ## What staff see
+Every answer carries a `trace` (route, retrieve attempts, grade, rewrite, generate, in ms); `agentkit ask "…" --debug` prints it. `GET /api/search?q=` shows what retrieval finds without calling the model.
+
 | Where | What |
 |---|---|
 | `/admin` Usage panel | questions by mode, feedback, degraded answers, overdue tickets, workload per subject queue (open, closed, oldest open in hours) |

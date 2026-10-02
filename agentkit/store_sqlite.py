@@ -110,6 +110,12 @@ class SqliteIndex(BaseIndex):
     def iter_chunks(self):
         return (Chunk(**json.loads(d)) for (d,) in self.db.execute("SELECT data FROM chunks"))
 
+    def vocabulary(self) -> list[str]:
+        if getattr(self, "_vocab_version", None) != self.version:
+            self._vocab = [r[0] for r in self.db.execute("SELECT term FROM vocab_words ORDER BY term")]
+            self._vocab_version = self.version
+        return self._vocab
+
     def manifest(self) -> dict[str, dict]:
         return {o: json.loads(e) for o, e in self.db.execute("SELECT origin, entry FROM manifest")}
 

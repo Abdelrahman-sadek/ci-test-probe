@@ -9,6 +9,19 @@ agentkit --index data/index.db eval --set golden    # also: --set dev, --set hel
 agentkit redteam && agentkit test-agents && pytest -q && python scripts/ocr_bench.py
 ```
 
+## Agentic retrieval (plan 6, 2026-10-02)
+
+Ideas taken from production-agentic-rag-course ([plan 6](plans/06-agentic-rag.md)): grade → rewrite → retry loop, per-request trace, model-free search.
+
+| Set | JSON | SQLite | Change vs. before |
+|---|---|---|---|
+| golden | 40/40, recall 1.0, MRR 1.0 | 40/40, recall 1.0, MRR 1.0 | none |
+| dev | 20/25, recall 1.0, MRR 0.947 | 20/25, recall 1.0, MRR 0.895 | none |
+| held-out | 16/20, recall 1.0, MRR 0.969 | 16/20, recall 0.938, MRR 0.938 | none |
+| red-team | 30/30 | — | none |
+
+The existing sets did not move: their remaining misses are sentence choice, not failed retrieval. On misspelled probes the retry recovered 2 of 6 questions that were handoffs with one attempt ("dissertatoins onlin", "consultaion with a librarain"), on both back ends; the other 4 already succeeded through trigram matching. Out-of-scope questions (football, course registration) still hand off after the retry. The live-mode grader is covered by tests with a scripted model; its real effect needs the live eval. Tests: 154 passed (6 new).
+
 ## Round 3: final verdicts (2026-10-02)
 
 **Sonnet: VERDICT: OK. Haiku: VERDICT: OK** (for entering the gated pilot). Both agreed nothing left is a P0: the code gates block real users until the live-model run and AUC's human sign-offs are done. Their remaining P1s were applied before this commit:

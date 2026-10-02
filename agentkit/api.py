@@ -1,6 +1,6 @@
 """Production HTTP service (FastAPI). Run: `agentkit serve` (uvicorn, several workers optional).
 
-Public:  GET /  /embed  /widget.js  /static/*  /healthz  /api/agents   POST /api/ask  /api/ask/stream (SSE)
+Public:  GET /  /embed  /widget.js  /static/*  /healthz  /api/agents  /api/search   POST /api/ask  /api/ask/stream (SSE)
 Admin:   GET /admin  /admin/api/jobs/{id}  /admin/api/review  /admin/api/stats  /metrics
          POST /admin/api/upload  /admin/api/approve
 Channel: GET|POST /whatsapp
@@ -15,7 +15,7 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -245,6 +245,17 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
             except PermissionError as e:
                 raise HTTPException(403, str(e)) from e
         return ans
+
+    @app.get("/api/search")
+    def search(q: str = Query(min_length=1, max_length=300), k: int = Query(5, ge=1, le=20),
+               who: Principal = Depends(rate_limited)):
+        """Hybrid search without the model: ranked passages the caller may see. Cheap, and still works when
+        the model is down or over budget."""
+        from .arabic import detect_lang
+        hits = chat.index.search(q, k, chat._expand(q, detect_lang(q)), who.access)
+        return {"query": q, "results": [{"score": round(sc, 4), "title": c.title, "section": c.section,
+                                         "url": c.source, "page": c.page, "updated": c.updated,
+                                         "snippet": c.text.partition("\n")[2][:300]} for sc, c in hits]}
 
     @app.get("/api/me/data")
     def export_my_data(who: Principal = Depends(principal)):

@@ -25,6 +25,10 @@ class Broken(LLM):
         self.calls += 1
         raise ConnectionError("api down")
 
+    def complete(self, system, user, *, fast=False, max_tokens=None):  # grade / rewrite calls
+        self.calls += 1
+        raise ConnectionError("api down")
+
     def stream_answer(self, system, question, sources):
         raise ConnectionError("api down")
         yield  # pragma: no cover
@@ -37,9 +41,10 @@ def test_outage_degrades_to_extractive_and_breaker_opens(seed_index):
     for _ in range(3):
         ans = chat.ask("How many books can undergraduates borrow?")
         assert ans.degraded == "outage" and ans.mode == "answer" and "20" in ans.text
-    assert llm.status() == "outage" and inner.calls == 3
+    calls = inner.calls
+    assert llm.status() == "outage" and calls == 3  # three consecutive failures open the breaker
     chat.ask("Can alumni borrow books?")
-    assert inner.calls == 3  # breaker open: the broken API is not called again during cooldown
+    assert inner.calls == calls  # breaker open: the broken API is not called again during cooldown
 
 
 def test_budget_switches_to_extractive(seed_index, monkeypatch):

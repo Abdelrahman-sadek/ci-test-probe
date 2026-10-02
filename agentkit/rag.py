@@ -202,6 +202,13 @@ class BaseIndex:
 
     def iter_chunks(self):
         raise NotImplementedError
+
+    def vocabulary(self) -> list[str]:
+        """Distinct index terms, cached per index version (spelling correction in query rewriting)."""
+        if getattr(self, "_vocab_version", None) != self.version:
+            self._vocab = sorted({t for c in self.iter_chunks() if not c.blocked for t in c.tokens})
+            self._vocab_version = self.version
+        return self._vocab
     def remove_origin(self, origin: str) -> int: raise NotImplementedError
     def set_flag(self, origin: str, flag: str, on: bool) -> int: raise NotImplementedError
     def get(self, ids: list) -> list[Chunk]: raise NotImplementedError

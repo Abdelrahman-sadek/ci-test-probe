@@ -65,12 +65,13 @@ agentkit feedback-report                                  # unanswered + 👎 qu
 agentkit redteam                                          # 30 attacks (EN/AR/Franco, direct + planted in documents)
 agentkit preflight                                        # go/no-go before real users (live evals, sign-off, security)
 agentkit export-accessible scan.pdf -o scan.html          # OCR → accessible HTML
-pytest -q                                                 # 148 tests incl. a real-browser WCAG check
+pytest -q                                                 # 154 tests incl. a real-browser WCAG check
 ```
 
 ```
 question ─► auth (OIDC/JWT · SSO proxy) ─► rate limit ─► guardrails ─► cache (index version × access level)
          ─► route to AUC agent ─► expand (glossary · Franco-Arabic→Arabic) ─► hybrid retrieval filtered by access
+            ─► grade (live) ─► no match? rewrite the query and retry once
             (BM25 + trigram via SQLite FTS5 · optional BGE-M3/Qdrant · RRF · optional reranker) ─► relevance check
          ─► redact PII ─► Claude with native citations, streamed ─► answer · strategy · handoff · refuse ─► encrypted log
 documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) ─► text layer, or OCR if scanned/garbled
@@ -104,6 +105,7 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 | OCR quality | Word-box layout (columns, RTL, tables), per-page confidence, image clean-up, two-pass Tesseract, handwriting notes, staff correction queue, view-the-scan links, searchable-PDF export |
 | Resilience and operations ([plan 5](docs/plans/05-review-round1.md)) | Outage and budget fallback to search-results-only answers, handoff never lost, SLA escalation, index snapshots and rollback, freshness report, self-service data export and deletion |
 | Pilot gate | `agentkit preflight` blocks real users until evals ran live on the current index and config, [VERIFY] facts are gone, and AUC sign-offs (scope, security test, data protection, staff rota) are recorded; kill switch on the staff page |
+| Agentic retrieval ([plan 6](docs/plans/06-agentic-rag.md)) | Retrieve → grade (live) → rewrite → retry before handing off; per-request step trace; model-free `/api/search`. Ideas from [production-agentic-rag-course](https://github.com/jamwithai/production-agentic-rag-course) |
 | Answer style | [antislop](https://github.com/miqdadbadjuber/anti-slop) rules: no greetings, praise, closing offers or buzzwords in answers (EN and AR); checked in every eval |
 
 Plans and evidence: [research](docs/research/FINDINGS.md) → [plan 2](docs/plans/02-enhancement-plan.md) → [plan 3: secure, scale, accessible](docs/plans/03-scale-secure-accessible.md). Operations: [deploy](docs/DEPLOY.md) · [pilot plan](docs/PILOT.md) · [runbook](docs/RUNBOOK.md) · [staff guide](docs/STAFF-GUIDE.md) · [data policy](docs/DATA-POLICY.md) · [العربية](README.ar.md).
