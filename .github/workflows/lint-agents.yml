@@ -2,6 +2,7 @@ name: Agents CI
 on:
   push:
   pull_request:
+  workflow_dispatch:   # "Run workflow" button in the Actions tab
 permissions:
   contents: read
 jobs:
@@ -68,7 +69,7 @@ jobs:
         with: {python-version: "3.11"}
       - run: pip install -e ".[dev,a11y]" && python -m playwright install --with-deps chromium
       - name: axe-core WCAG 2.2 AA in Chromium (English + Arabic RTL)
-        run: pytest -q tests/test_a11y.py
+        run: pytest -q tests/test_a11y.py tests/test_dashboard_a11y.py
   security:
     runs-on: ubuntu-latest
     steps:

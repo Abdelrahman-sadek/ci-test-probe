@@ -6,10 +6,12 @@
 
 [![CI](https://github.com/Abdelrahman-sadek/AUC-starterkit/actions/workflows/lint-agents.yml/badge.svg)](https://github.com/Abdelrahman-sadek/AUC-starterkit/actions)
 ![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
-![Tests](https://img.shields.io/badge/tests-205%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-206%20(199%20core%20%2B%207%20browser)-2ea44f)
 ![WCAG](https://img.shields.io/badge/WCAG%202.2-AA%20(axe%200%20violations)-2ea44f)
 ![Red team](https://img.shields.io/badge/red--team-30%2F30%20blocked-2ea44f)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+
+<sub>Badge numbers come from local runs recorded in the [evaluation log](docs/EVALUATION-LOG.md); the CI workflow is configured but has not run on GitHub yet (see [CI status](#ci-status)).</sub>
 
 [Screenshots](#screenshots) · [Features](#features) · [Architecture](#architecture) · [Quick start](#quick-start) · [Server requirements](#server-requirements) · [Local models](#running-on-local-models) · [Evaluation](#quality-and-evaluation) · [Agents](#agent-kit) · [Docs](#documentation) · [العربية](README.ar.md)
 
@@ -175,7 +177,7 @@ flowchart TB
 | OCR | PyMuPDF, Pillow pre-processing, Tesseract (`ara+eng`), Claude or local vision model |
 | Storage | SQLite (index, AppDB: answers, usage, tickets, feedback, audit), JSONL encrypted logs, optional Redis for the semantic cache |
 | Security | PyJWT/JWKS, Fernet, rate limiter, sandboxed parsing (fork + rlimits), bandit, pip-audit, hash-pinned lockfile, CycloneDX SBOM |
-| Quality | pytest (205 tests), axe-core with Playwright and Chromium, golden/dev/held-out/thesis eval sets, 30-attack red team |
+| Quality | pytest (206 tests: 199 core, 7 in a real browser), axe-core with Playwright and Chromium, golden/dev/held-out/thesis eval sets, 30-attack red team |
 | Deploy | Docker (non-root, read-only filesystem), docker-compose with Caddy and optional Qdrant, GitHub Actions CI |
 
 ```
@@ -217,7 +219,7 @@ agentkit harvest-theses https://fount.aucegypt.edu/do/oai/ --limit 100 --ingest 
 agentkit tickets-check && agentkit freshness    # daily cron: SLA escalation, stale sources
 agentkit snapshots && agentkit rollback         # undo a bad ingest
 agentkit export-searchable scan.pdf -o out.pdf  # OCR text layer for a scan
-pytest -q                                       # 205 tests including real-browser accessibility
+pytest -q                                       # 199 core tests; install ".[a11y]" for the 7 browser tests
 ```
 
 The main settings are listed in [`.env.example`](.env.example): models, budget and alerts, SSO, connectors (LibCal, Primo, Alma, LibAnswers), SMTP, retention, roles, critic, semantic cache, local models and harvesting.
@@ -349,10 +351,14 @@ Offline numbers below use the deterministic extractive stand-in. Retrieval numbe
 | Red team | **30/30** attacks blocked |
 | Accessibility | axe-core WCAG 2.2 AA: **0 violations** on chat (EN/AR), all 14 dashboard tabs, request and privacy pages |
 | OCR bench (Tesseract, synthetic) | CER 0.000 on clean/rotated/blurred/noisy/low-res EN and AR; diacritized Arabic routed to staff correction |
-| Tests and security | 205 tests; bandit 0 medium/high; pip-audit 0; hash-pinned lockfile; SBOM in CI |
+| Tests and security | 206 tests (199 core + 7 browser, local runs); bandit 0 medium/high; pip-audit 0; hash-pinned lockfile; SBOM in CI |
 | Independent review | three rounds with two other models: **OK** from both for entering the gated pilot |
 
 ---
+
+## CI status
+
+`.github/workflows/lint-agents.yml` runs lint, the 199 core tests on Python 3.10 and 3.12, golden/dev/held-out/thesis evals, red team, search latency, OCR bench, browser accessibility, pip-audit, bandit, SBOM, plugin validation and a Docker smoke test. It has not run on GitHub yet: no push has started a run, and Dependabot jobs stay queued. That usually means Actions is disabled or blocked for the account. Check **Settings → Actions → General** (allow actions) and **Billing** (spending limit or payment), then use **Actions → Agents CI → Run workflow**. Every job except Docker was replayed locally on a fresh clone in a clean virtualenv on 2026-10-02, and all passed.
 
 ## Agent Kit
 

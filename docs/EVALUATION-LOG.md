@@ -9,6 +9,19 @@ agentkit --index data/index.db eval --set golden    # also: --set dev, --set hel
 agentkit redteam && agentkit test-agents && pytest -q && python scripts/ocr_bench.py
 ```
 
+## External check of the repository (2026-10-02)
+
+An outside reviewer cloned the repo and found three gaps and three mismatches. All of them were confirmed and fixed:
+
+| Finding | Cause | Fix | Verified |
+|---|---|---|---|
+| `.[dev]` install: 10 tests failed with `No module named 'PIL'` | Pillow was only in the `tesseract` extra, but core OCR code imports it | Pillow moved to the main dependencies (lockfile unchanged: it was already pinned) | Clean virtualenv with only `.[dev]`: 198 passed, 2 skipped (the browser modules) before the new test; 199 core tests now |
+| CI never ran on GitHub | Both workflows are registered and active, but no push started a run, and the 9 Dependabot runs stay "queued": Actions is blocked at the account or repository level | Not fixable from code. Added a `workflow_dispatch` trigger and README instructions (Settings → Actions, Billing). The accessibility job now also runs the dashboard browser tests | Every CI job except Docker (no daemon in this environment) replayed on a fresh clone in a clean virtualenv: lint, tests, golden/dev/held-out/thesis evals, red team, search latency (p95 38 ms), OCR bench, Tesseract test, browser accessibility (7 passed), pip-audit, bandit, SBOM, plugin validation, install script — all passed |
+| `.github/workflows/test.yml` placeholder | Left over from the empty repository | Deleted | — |
+| 28 undocumented `AGENTKIT_*` settings | `.env.example` covered newer settings only | All documented with defaults; new test `test_every_setting_is_documented` fails if code reads an undocumented setting | test passes |
+| Arabic README said 19 agents | Not updated when `evaluator-critic` was added | 20 | `scripts/lint-agents.sh`: 20 agents |
+| Badge said 205 tests | Counted with the browser extra installed; a plain `.[dev]` install skips 2 browser modules | Badge and README now say 206 = 199 core + 7 browser, from local runs | local run: 206 passed, 1 skipped (optional screenshots) |
+
 ## Plan 7 review round (2026-10-02)
 
 Verdicts on plan 7, the local model pool and the README: **Sonnet: OK. Haiku: OK.** Their P1 items were closed in the same round:
