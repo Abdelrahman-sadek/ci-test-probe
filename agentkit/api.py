@@ -96,6 +96,19 @@ class RareRequestIn(BaseModel):
     consent: bool
 
 
+class CiteSource(BaseModel):
+    title: str = Field(max_length=500)
+    section: str = Field("", max_length=300)
+    url: str = Field("", max_length=1000)
+    updated: str = Field("", max_length=40)
+    meta: dict = Field(default_factory=dict)
+
+
+class CiteIn(BaseModel):
+    sources: list[CiteSource] = Field(min_length=1, max_length=50)
+    format: str = Field(pattern="^(bibtex|ris|enw|csl|apa|mla)$")
+
+
 class MaintenanceIn(BaseModel):
     on: bool
 
@@ -267,6 +280,19 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
                                          "url": c.source, "page": c.page, "updated": c.updated,
                                          "snippet": c.text.partition("\n")[2][:300]} for sc, c in hits]}
 
+    @app.post("/api/cite")
+    def cite(body: CiteIn, _: Principal = Depends(rate_limited)):
+        """Export the cited sources as BibTeX, RIS, EndNote, CSL-JSON (downloads) or APA/MLA text."""
+        from .citations import FORMATS, export
+        meta_ok = {"type", "title", "author", "year", "publisher", "degree", "advisor", "department", "institution",
+                   "repository", "isbn", "doi", "call_number", "url"}
+        sources = [{**s.model_dump(), "meta": {k: str(v)[:500] for k, v in s.meta.items() if k in meta_ok}}
+                   for s in body.sources]
+        text = export(sources, body.format)
+        media, ext = FORMATS[body.format]
+        return PlainTextResponse(text, media_type=media + "; charset=utf-8",
+                                 headers={"Content-Disposition": f'attachment; filename="references.{ext}"'})
+
     @app.get("/api/me/data")
     def export_my_data(who: Principal = Depends(principal)):
         """Data-subject access request: everything stored about the signed-in user, as JSON."""
@@ -368,6 +394,8 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
             for kind, data in chat.ask_stream(body.question, hist, access=who.access, user=who.user):
                 if kind == "delta":
                     yield f"data: {json.dumps({'delta': data}, ensure_ascii=False)}\n\n"
+                elif kind == "status":
+                    yield f"event: status\ndata: {json.dumps({'status': data})}\n\n"
                 else:
                     out = data.to_dict()
                     if who.user and appdb is not None and out["mode"] != "account":

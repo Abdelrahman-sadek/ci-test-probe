@@ -107,8 +107,9 @@ def evaluations(chat, since: float, until: float, **_):
             out["golden" if name == "eval" else name] = {
                 k: rep.get(k) for k in ("passed", "total", "pass_rate", "recall_at_k", "mrr", "by_lang", "live", "config")
             } | {"failed": failed[:30], "updated": path.stat().st_mtime}
-    critic = Counter(json.loads(t).get("critic", "") for (t,) in chat.appdb.db.execute(
-        "SELECT trace FROM answers WHERE ts >= ? AND trace LIKE '%critic%'", (since,)))
+    critic = Counter(s.get("critic", "") for (t,) in chat.appdb.db.execute(
+        "SELECT trace FROM answers WHERE ts >= ? AND trace LIKE '%critic%'", (since,))
+        for s in json.loads(t) if s.get("step") == "critic")
     return {"reports": out, "critic_verdicts": {k: v for k, v in critic.items() if k}}
 
 

@@ -2,6 +2,7 @@
 time and never indexed. Each connector returns Chunks, so answers cite them like any other source."""
 import hashlib
 import json
+import re
 import os
 import urllib.parse
 import urllib.request
@@ -60,8 +61,13 @@ class PrimoCatalog:
             link = (f"{self.discovery_url}/discovery/fulldisplay?docid={urllib.parse.quote(recid)}&vid={self.vid}"
                     if recid else self.discovery_url)
             body = f"{title} › Catalog record\n{text}"
+            year = (re.search(r"\d{4}", first("creationdate")) or [""])[0]
+            meta = {"type": "book" if "book" in first("type").lower() else first("type").lower() or "book",
+                    "author": first("creator"), "year": year, "publisher": first("publisher"),
+                    "isbn": first("identifier").removeprefix("$$CISBN$$V").split(";")[0] if "ISBN" in first("identifier") else "",
+                    "call_number": best.get("callNumber", ""), "url": link}
             out.append(Chunk(hashlib.sha1(body.encode(), usedforsecurity=False).hexdigest()[:12], body, title, "Catalog record", link, 1,
-                             detect_lang(title), "live-catalog", tokens=tokenize(body)))
+                             detect_lang(title), "live-catalog", tokens=tokenize(body), meta={k: v for k, v in meta.items() if v}))
         return out
 
 

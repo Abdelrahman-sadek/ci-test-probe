@@ -60,3 +60,4 @@ main.wide,.bar.wide{max-width:72rem}
 .tbl th{color:var(--muted);font-weight:600}
 .scroll{overflow-x:auto}
 .badge{display:inline-block;font-size:.8rem;border:1px solid var(--line);border-radius:1rem;padding:0 .5rem}
+.cite{margin-top:.5rem}.cite select{max-width:20rem;margin:.25rem .5rem .25rem 0}.citeout{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--card);border:1px solid var(--line);border-radius:.5rem;padding:.5rem;font-size:.85rem}

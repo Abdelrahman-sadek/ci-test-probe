@@ -11,7 +11,7 @@ const STR = {
        consent: "Library staff may contact me at this email about my question", send2: "Send",
        ticket: "Sent. Reference", consult: "Book a consultation", contact: "Contact", request: "Request rare materials",
        renew: "Renew", renewed: "Renewal requested.", mine: "My saved items and past chats", savedh: "Saved",
-       pasth: "Past conversations", signin: "Sign in with your AUC account to see this.", scan: "View scanned page",
+       pasth: "Past conversations", signin: "Sign in with your AUC account to see this.", scan: "View scanned page", cite: "Export references", citefmt: "Format", citego: "Export", citecheck: "Check every reference before you submit it.", checking: "Checking the answer against the sources…",
        degraded: "The AI service is busy, so this answer shows the most relevant passage from library sources.",
        related: "You may also ask about:", referral: "Contact the", privacy: "Privacy: how your questions are handled",
        download: "Download my data", erase: "Delete my data", confirm: "Delete all your saved chats, searches, feedback and help requests?",
@@ -27,7 +27,7 @@ const STR = {
        consent: "أوافق على أن يتواصل معي موظفو المكتبة عبر هذا البريد بخصوص سؤالي", send2: "إرسال",
        ticket: "تم الإرسال. رقم الطلب", consult: "احجز استشارة", contact: "تواصل", request: "طلب مواد نادرة",
        renew: "تجديد", renewed: "تم طلب التجديد.", mine: "محفوظاتي ومحادثاتي السابقة", savedh: "المحفوظات",
-       pasth: "المحادثات السابقة", signin: "سجّل الدخول بحساب الجامعة لعرض هذا.", scan: "عرض الصفحة الممسوحة",
+       pasth: "المحادثات السابقة", signin: "سجّل الدخول بحساب الجامعة لعرض هذا.", scan: "عرض الصفحة الممسوحة", cite: "تصدير المراجع", citefmt: "الصيغة", citego: "تصدير", citecheck: "راجع كل مرجع قبل تقديمه.", checking: "جارٍ التحقق من الإجابة مقابل المصادر…",
        degraded: "خدمة الذكاء الاصطناعي مشغولة، لذلك تعرض هذه الإجابة أنسب فقرة من مصادر المكتبة.",
        related: "يمكنك أيضًا السؤال عن:", referral: "تواصل مع", privacy: "الخصوصية: كيف نتعامل مع أسئلتك",
        download: "تنزيل بياناتي", erase: "حذف بياناتي", confirm: "هل تريد حذف كل محادثاتك وعمليات البحث والملاحظات وطلبات المساعدة المحفوظة؟",
@@ -142,6 +142,30 @@ function actionsRow(box, d, question) {
   }
 }
 
+let citeSeq = 0;
+function citeBox(sources) {
+  const det = el("details", "cite"), id = "cite" + (++citeSeq);
+  det.append(el("summary", "", t("cite")));
+  const lab = el("label", "", t("citefmt")); lab.htmlFor = id;
+  const sel = el("select"); sel.id = id;
+  for (const [v, l] of [["apa", "APA 7"], ["mla", "MLA 9"], ["bibtex", "BibTeX"], ["ris", "RIS (Zotero, Mendeley, EndNote)"], ["enw", "EndNote (.enw)"], ["csl", "CSL-JSON"]]) {
+    const o = el("option", "", l); o.value = v; sel.append(o);
+  }
+  const go = button(t("citego")), out = el("pre", "citeout"); out.hidden = true; out.tabIndex = 0;
+  go.addEventListener("click", async () => {
+    const body = JSON.stringify({format: sel.value, sources: sources.map((s) => ({title: s.title, section: s.section || "", url: s.url || "", updated: s.updated || "", meta: s.meta || {}}))});
+    const r = await fetch("/api/cite", {method: "POST", headers: {"Content-Type": "application/json"}, body});
+    if (!r.ok) return;
+    const text = await r.text();
+    if (sel.value === "apa" || sel.value === "mla") { out.textContent = text; out.hidden = false; out.focus(); return; }
+    const ext = {bibtex: "bib", ris: "ris", enw: "enw", csl: "json"}[sel.value];
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type: "text/plain"}));
+    a.download = "references." + ext; document.body.append(a); a.click(); a.remove();
+  });
+  det.append(lab, sel, go, out, el("p", "note", t("citecheck")));
+  return det;
+}
+
 function render(box, d, question) {
   box.textContent = "";
   const banner = $("banner");
@@ -161,7 +185,7 @@ function render(box, d, question) {
       }
       list.append(li);
     }
-    box.append(list);
+    box.append(list, citeBox(d.sources));
   }
   if (d.retrieved && d.retrieved.length) {
     const det = el("details"); det.append(el("summary", "", t("retrieval") + " (" + d.retrieved.length + ")"));
@@ -196,7 +220,9 @@ async function ask(question) {
         const evt = buf.slice(0, i); buf = buf.slice(i + 2);
         const isDone = evt.startsWith("event: done");
         const data = JSON.parse(evt.slice(evt.indexOf("data: ") + 6));
-        if (isDone) final = data; else { text += data.delta; box.textContent = text; }
+        if (isDone) final = data;
+        else if (evt.startsWith("event: status")) box.textContent = t("checking");
+        else { text += data.delta; box.textContent = text; }
       }
     }
     if (!final) throw new Error(t("error"));

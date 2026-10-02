@@ -4,6 +4,7 @@ Guardrails map to the OWASP Top 10 for LLM Applications (2025): LLM01 prompt inj
 information, LLM07 system-prompt leakage, LLM08 access control on retrieval, LLM09 misinformation (answer
 only from cited sources), LLM10 unbounded consumption (input caps).
 """
+import dataclasses
 import datetime
 import difflib
 import os
@@ -13,7 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import style
+from . import critic, style
 from .agents import load_all
 from .arabic import detect_lang, franco_to_arabic, normalize, sentences, stem_ar, tokenize, words
 from .cache import AnswerCache
@@ -230,6 +231,7 @@ class Answer:
                 "related": self.related, "trace": self.trace,
                 "sources": [{"n": i, "title": c.title, "section": c.section, "url": link(c), "page": c.page,
                              "method": c.method, "confidence": c.confidence, "origin": c.origin,
+                             "updated": c.updated, "meta": c.meta,
                              "quotes": self.quotes.get(i, [])} for i, c in self.sources],
                 "retrieved": [{"score": round(s, 4), "title": c.title, "section": c.section, "method": c.method}
                               for s, c in self.hits]}
@@ -288,6 +290,10 @@ class LibraryChat:
         self.catalog, self.cache = catalog, cache
         self.maintenance = os.getenv("AGENTKIT_MAINTENANCE") == "1"  # also toggled from the staff page
         self.budget = None  # BudgetMonitor, attached by make_chat when AppDB is on
+        self.semcache = None
+        if os.getenv("AGENTKIT_SEMCACHE") == "1":
+            from .semcache import SemanticCache
+            self.semcache = SemanticCache()
         self.appdb, self.libcal, self.account = appdb, libcal, account
         self.log = SecureLog(log_path) if log_path else None
         self.agents = load_all()
@@ -467,6 +473,36 @@ class LibraryChat:
                             "live": bool(live), "question": question, "notes": notes,
                             "t_generate": time.perf_counter()}
 
+    def _critic(self, ctx: dict, g: Grounded) -> Grounded:
+        """Check research and policy answers before they are shown: mechanical checks, then (live) a fast-model
+        review; one revision; otherwise the answer becomes a handoff (ctx["critic"] == "handoff")."""
+        hits = ctx["hits"]
+        g.text = style.clean(g.text)  # filler is removed deterministically; judge what the reader will see
+        cited = [(n, hits[n - 1][1]) for n in g.cited if 1 <= n <= len(hits)]
+        if os.getenv("AGENTKIT_CRITIC", "1") != "1" or not cited or not critic.in_scope(ctx["agent"], g.text, len(cited)):
+            return g
+        t0, trace = time.perf_counter(), ctx.setdefault("trace", Trace())
+        issues, verdict = critic.check(g.text, g.quotes, cited), "pass"
+        if not issues and self._optional_calls():
+            with usage_scope(agent=ctx["agent"], plugin=self._plugin(ctx["agent"]), purpose="critic"):
+                r = critic.review(self.llm, redact(ctx.get("question", "")), g.text, cited)
+            if r["verdict"] == "fix":
+                issues = r.get("issues") or [r.get("fix") or "low review score"]
+        if issues:
+            verdict = "handoff"
+            if self._optional_calls():
+                note = "\n- A reviewer found problems in your draft: " + "; ".join(issues[:5]) + \
+                       ". Rewrite the answer using only the search results, quoting them exactly."
+                with usage_scope(agent=ctx["agent"], plugin=self._plugin(ctx["agent"]), purpose="critic"):
+                    g2 = self.llm.answer(ctx["system"] + note, ctx["asked"], _sources(hits))
+                cited2 = [(n, hits[n - 1][1]) for n in g2.cited if 1 <= n <= len(hits)]
+                if cited2 and not critic.check(g2.text, g2.quotes, cited2):
+                    g, verdict = g2, "revised"
+        METRICS.inc("agentkit_critic_total", verdict=verdict)
+        trace.step("critic", t0, critic=verdict, issues=len(issues))
+        ctx["critic"] = verdict
+        return g
+
     def _finish(self, ctx: dict, grounded: Grounded) -> Answer:
         hits = ctx["hits"]
         trace = ctx.get("trace") or Trace()
@@ -479,6 +515,10 @@ class LibraryChat:
             ans.notes.append("Part of this answer comes from a scanned page that staff have not checked yet; "
                              "please confirm it against the scan.")
             trace.step("unchecked_scan", time.perf_counter())
+        if ctx.get("critic") == "handoff":  # unconfirmed against the sources: never shown as an answer
+            ans.mode = "handoff"
+            ans.text = ("I couldn't confirm an answer against the library sources, so a librarian should help with "
+                        "this. These pages may be useful: " + "; ".join(f"[{n}] {c.title}" for n, c in cited) + ".")
         if ans.notes:
             ans.text += "\n\n" + " ".join(ans.notes)
         ans.trace = trace.steps
@@ -555,6 +595,21 @@ class LibraryChat:
             return None
         return self.cache.key(question, self.index.version, access)
 
+    def _semantic(self, question: str, history, access: tuple):
+        """(cached answer or None, signature). Only plain questions; never refusals, accounts or follow-ups."""
+        if self.semcache is None or history or self.maintenance or guard(question) or ACCOUNT_RE.search(question):
+            return None, None
+        from .semcache import signature
+        t0 = time.perf_counter()
+        sig = signature(question, detect_lang(question), route(question), self.index.version, access)
+        hit, sim, cost = self.semcache.get(question, sig)
+        if hit is None:
+            return None, sig
+        METRICS.inc("agentkit_semantic_cache_hits_total")
+        METRICS.inc("agentkit_cache_saved_usd_total", cost)
+        step = {"step": "semantic_cache", "ms": round((time.perf_counter() - t0) * 1000, 2), "similarity": round(sim, 3)}
+        return dataclasses.replace(hit, id=uuid.uuid4().hex[:12], trace=[step]), sig
+
     def ask(self, question: str, history: list[dict] | None = None, access: tuple | None = None,
             user: str = "") -> Answer:
         question, access = question.strip(), tuple(access or self.access)
@@ -564,6 +619,10 @@ class LibraryChat:
         if cached is not None:
             METRICS.inc("agentkit_cache_hits_total")
             return self._record(question, cached, t0, user, cached=True)
+        sem_hit, sem_sig = self._semantic(question, history, access)
+        if sem_hit is not None:
+            return self._record(question, sem_hit, t0, user, cached=True)
+        cost0 = METRICS.value("agentkit_llm_cost_usd_total")
         self._user = user
         kind, payload = self._prepare(question, history, access)
         live = kind == "generate" and payload.get("live")
@@ -571,12 +630,16 @@ class LibraryChat:
             t1 = time.perf_counter()
             with usage_scope(agent=payload["agent"], plugin=self._plugin(payload["agent"]), purpose="answer"):
                 grounded = self.llm.answer(payload["system"], payload["asked"], _sources(payload["hits"]))
-            payload = self._finish(payload, grounded)
+            payload = self._finish(payload, self._critic(payload, grounded))
             METRICS.observe("agentkit_stage_seconds", time.perf_counter() - t1, stage="generate")
         elif payload.mode in ("handoff", "strategy"):
             payload = self._with_actions(payload, question)
         if key and not live and payload.mode in ("answer", "handoff", "refuse"):
             self.cache.put(key, payload)
+        if sem_sig:
+            from .semcache import cacheable
+            if cacheable(payload):
+                self.semcache.put(question, sem_sig, payload, METRICS.value("agentkit_llm_cost_usd_total") - cost0)
         return self._record(question, payload, t0, user)
 
     def ask_stream(self, question: str, history: list[dict] | None = None, access: tuple | None = None,
@@ -591,6 +654,11 @@ class LibraryChat:
             yield "delta", cached.text
             yield "done", self._record(question, cached, t0, user, cached=True)
             return
+        sem_hit, _ = self._semantic(question, history, access)
+        if sem_hit is not None:
+            yield "delta", sem_hit.text
+            yield "done", self._record(question, sem_hit, t0, user, cached=True)
+            return
         self._user = user
         kind, payload = self._prepare(question, history, access)
         if kind == "final":
@@ -598,6 +666,16 @@ class LibraryChat:
                 payload = self._with_actions(payload, question)
             yield "delta", payload.text
             yield "done", self._record(question, payload, t0, user)
+            return
+        if payload["agent"] in critic.HOLD_AGENTS:  # research answers are checked before any text is shown
+            yield "status", "checking"
+            with usage_scope(agent=payload["agent"], plugin=self._plugin(payload["agent"]), purpose="answer"):
+                grounded = self.llm.answer(payload["system"], payload["asked"], _sources(payload["hits"]))
+            ans = self._finish(payload, self._critic(payload, grounded))
+            if key and not payload.get("live"):
+                self.cache.put(key, ans)
+            yield "delta", ans.text
+            yield "done", self._record(question, ans, t0, user)
             return
         stream = self.llm.stream_answer(payload["system"], payload["asked"], _sources(payload["hits"]))
         labels = {"agent": payload["agent"], "plugin": self._plugin(payload["agent"]), "purpose": "answer"}
@@ -610,7 +688,7 @@ class LibraryChat:
             if event == "delta":
                 yield "delta", data
             else:
-                ans = self._finish(payload, data)
+                ans = self._finish(payload, self._critic(payload, data))  # a failed check replaces the streamed text
                 if key and not payload.get("live"):
                     self.cache.put(key, ans)
                 yield "done", self._record(question, ans, t0, user)

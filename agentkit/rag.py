@@ -57,6 +57,7 @@ class Chunk:
     valid_from: str = ""     # ISO date: not shown before this (e.g. Ramadan hours)
     valid_to: str = ""       # ISO date: hidden after this (expired policy or notice)
     priority: str = ""       # "urgent" → pinned above other results when relevant
+    meta: dict = field(default_factory=dict)  # bibliographic fields (type, author, year, advisor, department…)
 
     def current(self, today: str) -> bool:
         return (not self.valid_from or self.valid_from <= today) and (not self.valid_to or today <= self.valid_to)
