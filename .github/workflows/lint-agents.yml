@@ -1,0 +1,15 @@
+name: Lint agents
+on:
+  push:
+    paths: ["agents/**", "scripts/**"]
+  pull_request:
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/lint-agents.sh
+      - name: Install smoke test
+        run: |
+          HOME=$(mktemp -d) scripts/install.sh claude
+          scripts/install.sh cursor && scripts/install.sh agents-md
