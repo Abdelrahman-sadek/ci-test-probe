@@ -7,6 +7,8 @@
 - Before any release to real users: `agentkit preflight` must print "ready for real users". It blocks on [VERIFY] facts, missing AUC sign-off (`knowledge/auc-library/signoff.json`), evals not run live on the current index, open sign-in, spoofable proxy identity, unencrypted logs and the default log salt.
 
 ## What staff see
+The staff dashboard (`/admin`) has five groups of tabs: Overview (today, trends), Quality (conversations, knowledge gaps, evaluations), Knowledge (sources, review and notices, OCR), Service (tickets, librarians) and Operations (costs, performance, system, security). Viewers see Overview and Quality; staff add Knowledge and Service; admins see everything, including the kill switch.
+
 Every answer carries a `trace` (route, retrieve attempts, grade, rewrite, generate, in ms); `agentkit ask "…" --debug` prints it. `GET /api/search?q=` shows what retrieval finds without calling the model.
 
 | Where | What |

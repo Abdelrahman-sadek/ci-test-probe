@@ -76,7 +76,7 @@ ROUTES = {
     "auc-research-assistant": r"sources|articles|peer.?reviewed|\bapa\b|\bmla\b|chicago style|citation|cite"
                               r"|literature review|مصادر|مراجع|اعمل بحث|عمل بحث|ابدأ منين|ابدا منين|research on|research about"
                               r"|want to research|where (do|should) i (start|begin)",
-    "auc-catalog-navigator": r"do(es)? (you|the library) have|isbn|call number|(?<!my )\bthes[ie]s\b|dissertation"
+    "auc-catalog-navigator": r"do(es)? (you|the library) have|isbn|call number|(?<!my )\bthes[ie]s\b|dissertation|\bresala\b|\brasa2el\b"
                              r"|available|catalog|عندكم كتاب|في كتاب اسمه|رسال[ةه]|رسائل|ماجستير|دكتوراه",
 }
 
@@ -97,11 +97,17 @@ GLOSSARY = {
     "alumnus": "alumni", "alumna": "alumni", "graduates": "alumni", "undergrad": "undergraduate students",
     "undergrads": "undergraduate students", "postgrad": "graduate students", "checkout": "borrow",
     "keep": "borrow loan period", "extend": "renew", "renewal": "renew", "renewel": "renew",
-    "dissertations": "theses", "dissertation": "theses", "id": "passport government photo ID",
+    "published": "repository", "publish": "repository", "dissertations": "theses", "dissertation": "theses", "id": "passport government photo ID",
     "identification": "passport government photo ID", "outsiders": "external visitors",
     "outside": "external visitors", "strongest": "strengths", "strengths": "strengths",
     "professors": "faculty", "lecturers": "faculty", "staff": "faculty administrators",
     # Arabic / Franco-Arabic additions
+    "دكتوراه": "doctoral dissertation", "ماجستير": "master's thesis", "رسالة": "thesis", "رسائل": "theses",
+    "resala": "thesis", "rasa2el": "theses", "اقتصاد": "economics", "الاقتصاد": "economics",
+    "علم النفس": "psychology", "النفس": "psychology", "هندسة": "engineering", "العمارة": "architecture",
+    "عمارة": "architecture", "السياسة": "political science policy", "سياسة": "political science policy",
+    "الصحافة": "journalism", "الاعلام": "journalism mass communication", "المصريات": "egyptology",
+    "الحاسب": "computer science", "الحاسبات": "computer science", "الأجور": "wage", "الاجور": "wage",
     "الدور": "floor location entrance", "maw3ed": "hours", "mawa3ed": "hours", "a7gez": "book reserve",
     "ma3ad": "appointment consultation", "me3ad": "appointment consultation", "amin": "librarian",
     "كارنيه": "ID card", "الكارنيه": "ID card", "fat7a": "open hours", "fat7": "open hours",
@@ -140,6 +146,38 @@ def referral(question: str) -> dict | None:
         if any(re.search(rf"\b{re.escape(normalize(k))}", norm) for k in o.get("keywords", [])):
             return o
     return None
+
+
+_THESIS = re.compile(r"\b(thes[ie]s|dissertations?|capstones?|resala|rasa2el|rasayel)\b|رسال[ةه]|رسائل|ماجستير|دكتوراه",
+                     re.I)
+THESIS_TERMS = set(tokenize("thesis theses dissertation dissertations capstone resala rasa2el رسالة رسائل ماجستير دكتوراه"))
+_SINCE = re.compile(r"\b(?:since|after|from)\s+((?:19|20)\d\d)\b|(?:منذ|بعد|من)\s+((?:19|20)\d\d)")
+_UNTIL = re.compile(r"\b(?:before|until|to)\s+((?:19|20)\d\d)\b|(?:قبل|حتى|الى|إلى)\s+((?:19|20)\d\d)")
+_IN_YEAR = re.compile(r"\bin\s+((?:19|20)\d\d)\b|(?:في|سنة|عام)\s+((?:19|20)\d\d)")
+_ADVISOR = re.compile(r"\b(?:supervised|advised)\s+by\s+(?:dr\.?\s+|prof(?:essor)?\.?\s+)?([A-Z][\w'-]+(?:\s+[A-Z][\w'-]+)?)"
+                      r"|\badvisor\s+(?:dr\.?\s+)?([A-Z][\w'-]+(?:\s+[A-Z][\w'-]+)?)|(?:اشراف|إشراف)\s+(?:د\.?\s*)?(\S+(?:\s\S+)?)")
+
+
+def thesis_filters(question: str, departments: list[str]) -> dict:
+    """Metadata filters a thesis question asks for: type, year range, advisor, department."""
+    if not _THESIS.search(question):
+        return {}
+    f = {"type": "thesis"}
+    pick = lambda m: next(g for g in m.groups() if g)  # noqa: E731
+    if m := _SINCE.search(question):
+        f["year_from"] = pick(m)
+    if m := _UNTIL.search(question):
+        f["year_to"] = pick(m)
+    if (m := _IN_YEAR.search(question)) and "year_from" not in f:
+        f["year_from"] = f["year_to"] = pick(m)
+    if m := _ADVISOR.search(question):
+        f["advisor"] = pick(m)
+    low = normalize(question)
+    for d in sorted(departments, key=len, reverse=True):  # longest first: "political science" before "science"
+        if d and normalize(d) in low:
+            f["department"] = d
+            break
+    return f
 
 
 class Trace:
@@ -336,11 +374,32 @@ class LibraryChat:
         """Grade/rewrite/critic model calls: live only, and paused by the budget soft brake."""
         return self.llm.live and not getattr(self.llm, "brake", False)
 
-    def _retrieve(self, query: str, expansions: list[str], access: tuple) -> list:
+    def _meta_summary(self) -> tuple[bool, list[str]]:
+        """(any theses indexed, departments), recomputed only when the index changes."""
+        if getattr(self, "_meta_version", None) != self.index.version:
+            metas = [c.meta for c in self.index.iter_chunks() if c.meta]
+            self._meta_cache = (any(m.get("type") == "thesis" for m in metas),
+                                sorted({m.get("department", "") for m in metas} - {""}))
+            self._meta_version = self.index.version
+        return self._meta_cache
+
+    def _has_theses(self) -> bool:
+        return self._meta_summary()[0]
+
+    def _departments(self) -> list[str]:
+        return self._meta_summary()[1]
+
+    def _retrieve(self, query: str, expansions: list[str], access: tuple, filters: dict | None = None) -> list:
         """Hybrid search plus the relevance gate: a chunk must support enough of the question's concepts."""
         specific = set(tokenize(" ".join([query, *expansions]))) - GENERIC
         need = min(2, self._concepts(query))  # one weak/fuzzy term is not evidence of relevance
-        scored = [(s, c, support(specific, c.tokens)) for s, c in self.index.search(query, self.k, expansions, access)]
+        if filters:  # "thesis" is the filter, not evidence: only the topic words must match
+            specific -= THESIS_TERMS
+            need = min(2, self._concepts(_THESIS.sub(" ", query)))
+            if len(filters) > 1:  # department, year or advisor already narrowed the set
+                need = min(need, 1)
+        scored = [(s, c, support(specific, c.tokens))
+                  for s, c in self.index.search(query, self.k, expansions, access, filters=filters)]
         best = max((n for *_, n in scored), default=0)
         # keep chunks with at least half the best chunk's term support: less noise for the model
         return [(s, c) for s, c, n in scored if n >= max(need, (best + 1) // 2)]
@@ -372,7 +431,7 @@ class LibraryChat:
             fixed.append(near[0] if near else w)
         out = " ".join(fixed)
         if lang == "arabizi":
-            out += " " + franco_to_arabic(query)
+            out += " " + " ".join(franco_to_arabic(query))
         return out if out.strip() != query.lower().strip() else query
 
     def _system(self, agent: str, extra: str) -> str:
@@ -418,12 +477,16 @@ class LibraryChat:
         if hits:
             trace.step("catalog", t0, results=len(hits))
         attempts = int(os.getenv("AGENTKIT_MAX_RETRIEVAL_ATTEMPTS", "2"))
+        # no harvested theses yet: answer from the Knowledge Fountain page instead of filtering everything out
+        filters = thesis_filters(question, self._departments()) if self._has_theses() else {}
+        if filters:
+            trace.step("filters", t0, **{k: v for k, v in filters.items() if k != "type"})
         query = retrieval_q
         for attempt in range(1, attempts + 1):
             if hits:
                 break
             t1 = time.perf_counter()
-            hits = self._retrieve(query, expansions if attempt == 1 else self._expand(query, lang), access)
+            hits = self._retrieve(query, expansions if attempt == 1 else self._expand(query, lang), access, filters)
             trace.step("retrieve", t1, attempt=attempt, results=len(hits))
             if hits and self._optional_calls() and os.getenv("AGENTKIT_GRADE", "1") == "1":
                 t1 = time.perf_counter()

@@ -1,6 +1,6 @@
 # Agent Kit: lean AI agents for any use, plus RAG, OCR, chat and AUC Library divisions
 
-19 small, CI-validated agent definitions and a runnable **OCR → hybrid RAG → guarded chat** app for The American University in Cairo (AUC) Libraries, in Arabic, English and Franco-Arabic.
+20 small, CI-validated agent definitions and a runnable **OCR → hybrid RAG → guarded chat** app for The American University in Cairo (AUC) Libraries, in Arabic, English and Franco-Arabic.
 
 - **Lean:** about 35 lines per agent, versus 200–300 in [agency-agents](https://github.com/msitarzewski/agency-agents) (the inspiration). Each division plugin costs **≈ 210–420 always-on tokens** in Claude Code.
 - **Works everywhere:** a Claude Code plugin marketplace, plus installers for Cursor and `AGENTS.md` tools (Codex, Copilot, Gemini CLI, Aider), an open-standard Agent Skill, and an MCP server.
@@ -30,6 +30,7 @@ Then ask: *"Use agent-architect to make me an agent that triages support emails.
 |---|---|---|---|
 | core | `agent-architect` | inherit | you need a **new agent for any purpose** |
 | | `orchestrator` | inherit | a task needs several agents |
+| | `evaluator-critic` | haiku | a drafted answer must be checked against its sources before users see it |
 | | `prompt-engineer` | inherit | a prompt is weak, inconsistent or costly |
 | | `evaluator` | sonnet | you need to prove it works (golden tests, CI thresholds) |
 | | `mcp-tool-builder` | inherit | an agent needs safe access to data or actions over MCP |
@@ -64,8 +65,9 @@ agentkit eval --min-pass 0.95 --min-recall 0.9            # 40 golden questions 
 agentkit feedback-report                                  # unanswered + 👎 questions → test-set candidates
 agentkit redteam                                          # 30 attacks (EN/AR/Franco, direct + planted in documents)
 agentkit preflight                                        # go/no-go before real users (live evals, sign-off, security)
+agentkit harvest-theses https://fount.aucegypt.edu/do/oai/ --limit 100 --ingest   # thesis sample [VERIFY endpoint]
 agentkit export-accessible scan.pdf -o scan.html          # OCR → accessible HTML
-pytest -q                                                 # 154 tests incl. a real-browser WCAG check
+pytest -q                                                 # 191 tests incl. a real-browser WCAG check
 ```
 
 ```
@@ -105,6 +107,8 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 | OCR quality | Word-box layout (columns, RTL, tables), per-page confidence, image clean-up, two-pass Tesseract, handwriting notes, staff correction queue, view-the-scan links, searchable-PDF export |
 | Resilience and operations ([plan 5](docs/plans/05-review-round1.md)) | Outage and budget fallback to search-results-only answers, handoff never lost, SLA escalation, index snapshots and rollback, freshness report, self-service data export and deletion |
 | Pilot gate | `agentkit preflight` blocks real users until evals ran live on the current index and config, [VERIFY] facts are gone, and AUC sign-offs (scope, security test, data protection, staff rota) are recorded; kill switch on the staff page |
+| Staff dashboard ([plan 7](docs/plans/07-analytics-governance-research.md)) | 14 tabs in 5 groups (overview, quality, knowledge, service, operations) with viewer/staff/admin roles; persistent cost tracking by plugin, agent and purpose with budget alerts and a soft brake; knowledge-gap clusters; audit log |
+| Research tools | Reference export (APA, MLA, BibTeX, RIS, EndNote, CSL-JSON); thesis harvesting from the repository over OAI-PMH with department/advisor/year filters; evaluator-critic for research and policy answers; safe semantic cache (optional Redis) |
 | Agentic retrieval ([plan 6](docs/plans/06-agentic-rag.md)) | Retrieve → grade (live) → rewrite → retry before handing off; per-request step trace; model-free `/api/search`. Ideas from [production-agentic-rag-course](https://github.com/jamwithai/production-agentic-rag-course) |
 | Answer style | [antislop](https://github.com/miqdadbadjuber/anti-slop) rules: no greetings, praise, closing offers or buzzwords in answers (EN and AR); checked in every eval |
 

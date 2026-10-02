@@ -1,5 +1,7 @@
 # Plan 7: analytics, governance, research integrations and the staff dashboard
 
+**Status (2026-10-02): all five phases built and tested; results in the [evaluation log](../EVALUATION-LOG.md). Open items: live-model runs, BGE-M3 for cross-language thesis search, AUC permission before harvesting real theses.**
+
 Seven features in five phases. Each one lists what already exists, the design, the risks, and how we prove it works. Order: the dashboard and persistent usage data come first because four of the other features report into them.
 
 | # | Feature | Phase | Size | Depends on |

@@ -31,6 +31,17 @@ jobs:
         run: |
           agentkit --index data/index.db eval --set dev || true
           agentkit --index data/index.db eval --set heldout || true
+          python - <<'PY'
+          from pathlib import Path
+          from agentkit.harvest import harvest
+          pages = {False: Path("samples/fixtures/oai/page1.xml").read_bytes(), True: Path("samples/fixtures/oai/page2.xml").read_bytes()}
+          def fetch(url):
+              if "viewcontent" in url: raise OSError("offline")
+              return pages["resumptionToken=page2token" in url]
+          print(harvest("https://fount.aucegypt.edu/do/oai/", "data/theses", fetch=fetch))
+          PY
+          agentkit --index data/theses.db ingest knowledge/auc-library/pages data/theses && agentkit --index data/theses.db approve
+          agentkit --index data/theses.db eval --set theses || true
       - uses: actions/upload-artifact@v4
         if: always() && matrix.python == '3.12'
         with: {name: eval-reports, path: data/*-report.md}

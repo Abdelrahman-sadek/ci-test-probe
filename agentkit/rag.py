@@ -125,6 +125,11 @@ def chunk_document(path: Path, llm: LLM, safe: bool = True) -> tuple[list[Chunk]
         pages = [Page(fixes[pg.page], pg.page, "corrected", 1.0) if pg.page in fixes else pg for pg in pages]
     sidecar = path.with_name(path.name + ".meta.json")  # title/url/access for PDFs and images
     side = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.exists() else {}
+    biblio = side.pop("biblio", {}) if isinstance(side.get("biblio"), dict) else {}  # thesis/catalog metadata
+    who = "; ".join(biblio["author"]) if isinstance(biblio.get("author"), list) else biblio.get("author", "")
+    context = ", ".join(x for x in (f"by {who}" if who else "", biblio.get("degree", ""), biblio.get("department", ""),
+                                    biblio.get("year", ""), f"advisor {biblio['advisor']}" if biblio.get("advisor") else "")
+                        if x)  # every chunk of a thesis names its author, department and year
     for page in pages:
         meta, body = _frontmatter(page.text)
         meta = {**{k: str(v) for k, v in side.items()}, **meta}
@@ -141,7 +146,8 @@ def chunk_document(path: Path, llm: LLM, safe: bool = True) -> tuple[list[Chunk]
                 c = Chunk(cid, text, title, section, source, page.page, detect_lang(win), page.method,
                           meta.get("updated", ""), meta.get("access", "public"), flags, origin=str(path),
                           confidence=page.confidence, valid_from=meta.get("valid_from", ""),
-                          valid_to=meta.get("valid_to", ""), priority=meta.get("priority", ""))
+                          valid_to=meta.get("valid_to", ""), priority=meta.get("priority", ""), meta=dict(biblio),
+                          context=f"{title} — {context}" if context else "")
                 chunks.append(c)
                 bodies[cid] = body
     for c in chunks:
@@ -254,21 +260,31 @@ class BaseIndex:
         return dest
 
     # Search
+    _filter: dict | None = None  # metadata filter for the search in progress (set under self.lock)
+
     def search(self, query: str, k: int = 5, expansions: list[str] | None = None,
-               access: tuple[str, ...] = ("public",), pool: int = 50) -> list[tuple[float, Chunk]]:
-        """Hybrid search over chunks the caller may see (OWASP LLM08); quarantined chunks never surface."""
+               access: tuple[str, ...] = ("public",), pool: int = 50,
+               filters: dict | None = None) -> list[tuple[float, Chunk]]:
+        """Hybrid search over chunks the caller may see (OWASP LLM08); quarantined chunks never surface.
+        `filters` narrows by metadata: type, department, advisor, year_from, year_to (e.g. theses)."""
         import datetime
         q = " ".join([query, *(expansions or [])])
         today = datetime.date.today().isoformat()
+        filters = {k_: v for k_, v in (filters or {}).items() if v not in (None, "")} or None
         with self.lock:
-            rankings = [self._rank_bm25(q, access, pool), self._rank_chargram(q, access, pool)]
-            if self.embedder:
-                rankings.append(self._rank_dense(q, access, pool))
+            self._filter = filters
+            try:
+                rankings = [self._rank_bm25(q, access, pool), self._rank_chargram(q, access, pool)]
+                if self.embedder:
+                    rankings.append(self._rank_dense(q, access, pool))
+            finally:
+                self._filter = None
             fused = rrf([r for r in rankings if r])
             ranked = sorted(fused, key=lambda i: -fused[i])[: max(k, 20) * 2]
             chunks = dict(zip(ranked, self.get(ranked)))
             # effective dates: expired or not-yet-valid content never surfaces
-            top = [i for i in ranked if chunks[i].current(today)][: max(k, 20) if self.reranker else k]
+            top = [i for i in ranked if chunks[i].current(today) and (not filters or meta_match(chunks[i].meta, filters))
+                   ][: max(k, 20) if self.reranker else k]
         if self.reranker and top:
             rs = self.reranker.scores(query, [chunks[i].indexed_text for i in top])
             order = sorted(range(len(top)), key=lambda j: -rs[j])
@@ -367,7 +383,9 @@ class Index(BaseIndex):
         self._version = uuid.uuid4().hex
 
     def _allowed(self, access: tuple) -> set[int]:
-        return {i for i, c in enumerate(self.chunks) if c.access in access and not c.blocked}
+        f = self._filter
+        return {i for i, c in enumerate(self.chunks) if c.access in access and not c.blocked
+                and (f is None or meta_match(c.meta, f))}
 
     def _rank_bm25(self, query, access, pool):
         allowed, n, scores = self._allowed(access), len(self.chunks), defaultdict(float)
@@ -518,6 +536,27 @@ def freshness(index: BaseIndex, appdb=None, stale_days: float | None = None, now
     soon = (datetime.date.fromtimestamp(now) + datetime.timedelta(days=3)).isoformat()
     expiring = [n for n in (appdb.notices() if appdb else []) if n["valid_to"] and n["valid_to"] <= soon]
     return {"stale_sources": stale, "expiring_notices": expiring}
+
+
+def meta_match(meta: dict, f: dict) -> bool:
+    """Does a chunk's metadata satisfy a filter? Text fields match case-insensitively by substring."""
+    for key in ("type", "department", "degree", "language"):
+        if f.get(key) and f[key].lower() not in str(meta.get(key, "")).lower():
+            return False
+    for key in ("advisor", "author"):  # names in any order: "Sara Ibrahim" matches "Ibrahim, Sara"
+        if f.get(key):
+            have = set(re.findall(r"\w+", normalize(str(meta.get(key, "")))))
+            if not set(re.findall(r"\w+", normalize(f[key]))) <= have:
+                return False
+    year = str(meta.get("year", ""))[:4]
+    if f.get("year_from") or f.get("year_to"):
+        if not year.isdigit():
+            return False
+        if f.get("year_from") and int(year) < int(f["year_from"]):
+            return False
+        if f.get("year_to") and int(year) > int(f["year_to"]):
+            return False
+    return True
 
 
 def approve(index: BaseIndex, origin: str | None = None) -> list[str]:

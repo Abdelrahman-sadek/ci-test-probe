@@ -23,6 +23,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_grams USING fts5(body, tokenize='trigram'
 CREATE VIRTUAL TABLE IF NOT EXISTS vocab_words USING fts5vocab(fts_words, 'row');
 CREATE VIRTUAL TABLE IF NOT EXISTS vocab_grams USING fts5vocab(fts_grams, 'row');
 CREATE TABLE IF NOT EXISTS manifest(origin TEXT PRIMARY KEY, entry TEXT);
+CREATE INDEX IF NOT EXISTS chunks_meta_type ON chunks(json_extract(data, '$.meta.type'));
+CREATE INDEX IF NOT EXISTS chunks_meta_year ON chunks(json_extract(data, '$.meta.year'));
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -141,12 +143,34 @@ class SqliteIndex(BaseIndex):
         selective = [t for t in ranked if df[t] <= max_df * n] or ranked[:3]
         return selective[:keep]
 
+    def _filter_rowids(self) -> list[int]:
+        """Rows whose metadata passes the current filter: type/year narrowed in SQL (indexed), the rest in Python."""
+        from .rag import meta_match
+        f = self._filter
+        sql, args = "SELECT rowid, data FROM chunks WHERE blocked = 0", []
+        if f.get("type"):
+            sql += " AND json_extract(data, '$.meta.type') = ?"
+            args.append(f["type"])
+        if f.get("year_from"):
+            sql += " AND CAST(json_extract(data, '$.meta.year') AS INTEGER) >= ?"
+            args.append(int(f["year_from"]))
+        if f.get("year_to"):
+            sql += " AND CAST(json_extract(data, '$.meta.year') AS INTEGER) <= ?"
+            args.append(int(f["year_to"]))
+        return [r for r, d in self.db.execute(sql, args) if meta_match(json.loads(d).get("meta", {}), f)]
+
     def _ranked(self, table: str, terms: list[str], access: tuple, pool: int) -> list[int]:
         if not terms:
             return []
         if table not in ("fts_words", "fts_grams"):
             raise ValueError(table)
         match = " OR ".join(map(_quote, terms))
+        if self._filter:  # metadata filter: rank only inside the matching rows
+            amarks = ",".join("?" * len(access))
+            sql = (f"SELECT c.rowid FROM {table} JOIN chunks c ON c.rowid = {table}.rowid "
+                   f"WHERE {table} MATCH ? AND c.blocked = 0 AND c.access IN ({amarks}) "
+                   f"AND c.rowid IN (SELECT value FROM json_each(?)) ORDER BY bm25({table}) LIMIT ?")  # nosec B608
+            return [r[0] for r in self.db.execute(sql, [match, *access, json.dumps(self._filter_rowids()), pool])]
         # Fast path: let FTS5 rank and cut first (ORDER BY rank LIMIT), then filter access/quarantine.
         cand = [r[0] for r in self.db.execute(
             f"SELECT rowid FROM {table} WHERE {table} MATCH ? ORDER BY rank LIMIT ?", (match, pool * 4))]  # nosec B608

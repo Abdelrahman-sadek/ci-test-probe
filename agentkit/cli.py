@@ -104,6 +104,13 @@ def _main(argv=None):
     s = sub.add_parser("export-searchable", help="add an invisible OCR text layer to a scanned PDF")
     s.add_argument("path")
     s.add_argument("-o", "--output", required=True)
+    s = sub.add_parser("harvest-theses", help="harvest open-access theses over OAI-PMH into a folder to ingest")
+    s.add_argument("base_url", help="OAI-PMH endpoint, e.g. https://fount.aucegypt.edu/do/oai/ [VERIFY]")
+    s.add_argument("--out", default="data/theses")
+    s.add_argument("--set", default="", help="OAI set, e.g. publication:etds")
+    s.add_argument("--fulltext", action="store_true", help="also download open-access PDFs")
+    s.add_argument("--limit", type=int, default=None, help="stop after N records (try a sample first)")
+    s.add_argument("--ingest", action="store_true", help="index the folder after harvesting")
     sub.add_parser("preflight", help="go/no-go checks before real users (exit 1 when anything blocks)")
     sub.add_parser("pilot-report", help="pilot metrics: deflection, handoffs, satisfaction, SLA")
     sub.add_parser("review", help="list sources waiting for approval")
@@ -127,7 +134,7 @@ def _main(argv=None):
     s.add_argument("--json", default="data/eval-report.json")
     s.add_argument("--min-pass", type=float, default=0.0)
     s.add_argument("--min-recall", type=float, default=0.0)
-    s.add_argument("--set", default="golden", choices=["golden", "dev", "heldout"], help="question set")
+    s.add_argument("--set", default="golden", choices=["golden", "dev", "heldout", "theses"], help="question set")
     s = sub.add_parser("test-agents", help="smoke-test every agent (live mode grades replies)")
     s.add_argument("--out", default="data/agents-report.md")
     s = sub.add_parser("serve", help="web chat UI + JSON API")
@@ -250,6 +257,16 @@ def _main(argv=None):
         print(f"{rep['passed']}/{rep['total']} agents passed → {a.out}" +
               (f"  missing tests: {rep['missing']}" if rep["missing"] else ""))
         return 0 if rep["passed"] == rep["total"] and not rep["missing"] else 1
+    elif a.cmd == "harvest-theses":
+        from .harvest import harvest
+        rep = harvest(a.base_url, a.out, a.set, a.fulltext, limit=a.limit)
+        print(json.dumps(rep, indent=1))
+        if a.ingest:
+            idx = open_index(a.index, create=True)
+            idx.snapshot(a.index)
+            ingest([a.out], llm, idx)
+            idx.save(a.index)
+            print(f"Indexed {a.out} → {a.index}")
     elif a.cmd == "preflight":
         from .preflight import check
         res = check(open_index(a.index))
@@ -295,7 +312,7 @@ def _main(argv=None):
         elif a.cmd == "eval":
             from . import ROOT
             qset = ROOT / "evals/auc-library" / {"golden": "golden-questions.md", "dev": "dev.md",
-                                                  "heldout": "heldout.md"}[a.set]
+                                                  "heldout": "heldout.md", "theses": "theses.md"}[a.set]
             rep = run_golden(chat, qset)
             if a.set != "golden":
                 a.out = a.out.replace("eval-report", f"{a.set}-report")

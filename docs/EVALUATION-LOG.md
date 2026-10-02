@@ -9,6 +9,32 @@ agentkit --index data/index.db eval --set golden    # also: --set dev, --set hel
 agentkit redteam && agentkit test-agents && pytest -q && python scripts/ocr_bench.py
 ```
 
+## Plan 7: dashboard, costs, gaps, citations, critic, semantic cache, theses (2026-10-02)
+
+All five phases of [plan 7](plans/07-analytics-governance-research.md) are built and tested (offline stand-in; no API key here).
+
+| Set | JSON | SQLite | Note |
+|---|---|---|---|
+| golden | 40/40, recall 1.0, MRR 1.0 | 40/40, recall 1.0, MRR 1.0 | unchanged; also 40/40 with the critic on and with the semantic cache on |
+| dev | 20/25, recall 1.0, MRR 0.947 | 20/25, recall 1.0, MRR 0.895 | unchanged |
+| held-out | 16/20, recall 1.0, MRR 0.969 | 16/20, recall 0.938, MRR 0.938 | unchanged |
+| **theses (new, 30 rows)** | first run **20/30, recall 0.778** → 24/30, recall 0.893 | first run **19/30, recall 0.741** → 24/30, recall 0.893 | target 0.9 not met offline |
+
+Thesis set, honestly: the first run exposed three general problems, fixed before the second run. (1) Advisor names did not match across "First Last" and "Last, First". (2) The word "thesis" counted as evidence, so "a thesis on banking regulation" matched an unrelated thesis. (3) There were no Arabic or Franco words for degrees and departments. One expectation changed because it was wrong: t29 (a faculty article "in the repository") is correctly answered from the Knowledge Fountain page. The 6 remaining misses:
+- t21, t24 and t26: Arabic or Franco topic words with no English counterpart offline. Cross-language retrieval needs BGE-M3 vectors (`AGENTKIT_DENSE=1`) or the live rewrite step.
+- t19 and t20: the extractive stand-in quotes the abstract instead of the record line, though the right thesis is retrieved.
+- t28: a thesis that does not exist gets a search strategy instead of a handoff. Nothing was invented.
+
+| Phase | Evidence |
+|---|---|
+| A: dashboard and costs | 14 tabs in 5 groups. Every tab renders with data and passes axe with 0 violations in Chromium; the keyboard tablist works. Spend survives a restart. Thresholds alert once. The soft brake drops grade calls; the cap switches to search-results-only. Per-plugin costs sum to the total. Roles: a viewer cannot open Operations, staff cannot open System. Staff actions are audited under pseudonyms |
+| B: knowledge gaps | EN/AR/Franco questions about lost-book fines form one cluster. Clusters with fewer than 3 people are hidden. A gap creates a page task or test candidates |
+| C: citations | golden-file tests for APA 7, MLA 9, BibTeX, RIS, EndNote and CSL-JSON across pages, theses and books; nothing invented; BibTeX escaping; endpoint drops unknown fields |
+| D: critic and semantic cache | Critic: a fabricated number is revised; a failed revision becomes a handoff with source links; a low model score triggers a fix; research answers are held while checked. Semantic cache: a paraphrase hits. These miss: alumni vs. undergraduates, a different number, where vs. when, a different language, after an index change. Live-data answers are never stored. p95 hit under 15 ms in-process. The Redis path round-trips between two workers |
+| E: theses | The OAI-PMH harvester resumes after an interruption. It skips deleted, embargoed and non-thesis records and refuses non-https, non-allowlisted and DTD-bearing responses. Filters by department, year and advisor are identical on JSON and SQLite. Thesis answers cite APA "[Master's thesis, …]" from harvested metadata |
+
+Bugs found while building: the Franco-Arabic branch of the plan 6 offline rewrite crashed (it joined a list as a string); a ticket payload field overwrote the ticket's kind; the first tablist markup broke ARIA rules (one tablist per group now). Checks: 191 tests pass, 1 skipped (optional screenshots); red-team 30/30; agents 20/20 (new `evaluator-critic`); bandit 0 medium/high; pip-audit 0; plugin validation passed.
+
 ## Agentic retrieval (plan 6, 2026-10-02)
 
 Ideas taken from production-agentic-rag-course ([plan 6](plans/06-agentic-rag.md)): grade → rewrite → retry loop, per-request trace, model-free search.

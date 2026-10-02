@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><responseDate>2026-10-02T00:00:00Z</responseDate><request verb="ListRecords">https://fount.aucegypt.edu/do/oai/</request><ListRecords>
+<record><header><identifier>oai:fount.aucegypt.edu:etds-1001</identifier><datestamp>2019-06-01</datestamp><setSpec>publication:etds</setSpec></header>
+<metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>Water Pricing and Irrigation Efficiency in the Nile Delta</dc:title><dc:creator>Hassan, Mona</dc:creator><dc:contributor>Ibrahim, Sara</dc:contributor>
+<dc:description>This thesis estimates how volumetric water pricing changes irrigation efficiency among smallholder farmers in the Nile Delta, using survey data from Kafr El Sheikh.</dc:description><dc:date>2019-06-01T00:00:00-07:00</dc:date><dc:type>text</dc:type><dc:type>Master's Thesis</dc:type>
+<dc:format>application/pdf</dc:format><dc:identifier>https://fount.aucegypt.edu/etds/1001</dc:identifier>
+<dc:identifier>https://fount.aucegypt.edu/cgi/viewcontent.cgi?article=1001&amp;context=etds</dc:identifier>
+<dc:publisher>Economics</dc:publisher><dc:publisher>The American University in Cairo</dc:publisher><dc:rights>Open access. The author retains all rights.</dc:rights><dc:language>en</dc:language>
+</oai_dc:dc></metadata></record>
+<record><header><identifier>oai:fount.aucegypt.edu:etds-1002</identifier><datestamp>2021-06-01</datestamp><setSpec>publication:etds</setSpec></header>
+<metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>Informal Housing and Urban Planning in Greater Cairo</dc:title><dc:creator>Farouk, Omar</dc:creator><dc:contributor>Nassar, Laila</dc:contributor>
+<dc:description>A study of informal settlements in Greater Cairo and the planning tools used to upgrade them, with case studies from Ezbet El Haggana.</dc:description><dc:date>2021-06-01T00:00:00-07:00</dc:date><dc:type>text</dc:type><dc:type>Master's Thesis</dc:type>
+<dc:format>application/pdf</dc:format><dc:identifier>https://fount.aucegypt.edu/etds/1002</dc:identifier>
+<dc:identifier>https://fount.aucegypt.edu/cgi/viewcontent.cgi?article=1002&amp;context=etds</dc:identifier>
+<dc:publisher>Architecture</dc:publisher><dc:publisher>The American University in Cairo</dc:publisher><dc:rights>Open access. The author retains all rights.</dc:rights><dc:language>en</dc:language>
+</oai_dc:dc></metadata></record>
+<record><header><identifier>oai:fount.aucegypt.edu:etds-1003</identifier><datestamp>2016-06-01</datestamp><setSpec>publication:etds</setSpec></header>
+<metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>Social Media and Political Participation among Egyptian Youth</dc:title><dc:creator>Saleh, Nour</dc:creator><dc:contributor>Gamal, Tarek</dc:contributor>
+<dc:description>Using a national survey, this thesis examines how social media use relates to political participation among Egyptian university students.</dc:description><dc:date>2016-06-01T00:00:00-07:00</dc:date><dc:type>text</dc:type><dc:type>Master's Thesis</dc:type>
+<dc:format>application/pdf</dc:format><dc:identifier>https://fount.aucegypt.edu/etds/1003</dc:identifier>
+<dc:identifier>https://fount.aucegypt.edu/cgi/viewcontent.cgi?article=1003&amp;context=etds</dc:identifier>
+<dc:publisher>Political Science</dc:publisher><dc:publisher>The American University in Cairo</dc:publisher><dc:rights>Open access. The author retains all rights.</dc:rights><dc:language>en</dc:language>
+</oai_dc:dc></metadata></record>
+<record><header><identifier>oai:fount.aucegypt.edu:etds-1004</identifier><datestamp>2022-06-01</datestamp><setSpec>publication:etds</setSpec></header>
+<metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>Deep Learning for Arabic Handwriting Recognition</dc:title><dc:creator>Youssef, Karim</dc:creator><dc:contributor>Mansour, Hany</dc:contributor>
+<dc:description>We train convolutional and transformer models to recognise handwritten Arabic manuscripts and release a labelled dataset of historical scripts.</dc:description><dc:date>2022-06-01T00:00:00-07:00</dc:date><dc:type>text</dc:type><dc:type>Master's Thesis</dc:type>
+<dc:format>application/pdf</dc:format><dc:identifier>https://fount.aucegypt.edu/etds/1004</dc:identifier>
+<dc:identifier>https://fount.aucegypt.edu/cgi/viewcontent.cgi?article=1004&amp;context=etds</dc:identifier>
+<dc:publisher>Computer Science</dc:publisher><dc:publisher>The American University in Cairo</dc:publisher><dc:rights>Open access. The author retains all rights.</dc:rights><dc:language>en</dc:language>
+</oai_dc:dc></metadata></record>
+<record><header><identifier>oai:fount.aucegypt.edu:etds-1005</identifier><datestamp>2020-06-01</datestamp><setSpec>publication:etds</setSpec></header>
+<metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>Solar Desalination Systems for Remote Egyptian Communities</dc:title><dc:creator>Adel, Rana</dc:creator><dc:contributor>Kamel, Youssef</dc:contributor>
+<dc:description>Design and testing of a low-cost solar desalination unit for remote communities on the Red Sea coast.</dc:description><dc:date>2020-06-01T00:00:00-07:00</dc:date><dc:type>text</dc:type><dc:type>Master's Thesis</dc:type>
+<dc:format>application/pdf</dc:format><dc:identifier>https://fount.aucegypt.edu/etds/1005</dc:identifier>
+<dc:identifier>https://fount.aucegypt.edu/cgi/viewcontent.cgi?article=1005&amp;context=etds</dc:identifier>
+<dc:publisher>Mechanical Engineering</dc:publisher><dc:publisher>The American University in Cairo</dc:publisher><dc:rights>Open access. The author retains all rights.</dc:rights><dc:language>en</dc:language>
+</oai_dc:dc></metadata></record>
+<record><header><identifier>oai:fount.aucegypt.edu:etds-1006</identifier><datestamp>2014-06-01</datestamp><setSpec>publication:etds</setSpec></header>
+<metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>Mamluk Waqf Documents and Urban Endowments</dc:title><dc:creator>Ezzat, Huda</dc:creator><dc:contributor>Selim, Amira</dc:contributor>
+<dc:description>An analysis of Mamluk waqf deeds describing endowed buildings in medieval Cairo and their economic role.</dc:description><dc:date>2014-06-01T00:00:00-07:00</dc:date><dc:type>text</dc:type><dc:type>Master's Thesis</dc:type>
+<dc:format>application/pdf</dc:format><dc:identifier>https://fount.aucegypt.edu/etds/1006</dc:identifier>
+<dc:identifier>https://fount.aucegypt.edu/cgi/viewcontent.cgi?article=1006&amp;context=etds</dc:identifier>
+<dc:publisher>Arabic and Islamic Civilizations</dc:publisher><dc:publisher>The American University in Cairo</dc:publisher><dc:rights>Open access. The author retains all rights.</dc:rights><dc:language>en</dc:language>
+</oai_dc:dc></metadata></record>
+<record><header><identifier>oai:fount.aucegypt.edu:etds-1007</identifier><datestamp>2017-06-01</datestamp><setSpec>publication:etds</setSpec></header>
+<metadata><oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>Funerary Texts of the Middle Kingdom at Beni Hasan</dc:title><dc:creator>Mostafa, Ali</dc:creator><dc:contributor>Hawass, Dina</dc:contributor>
+<dc:description>A philological study of coffin texts from the Middle Kingdom tombs at Beni Hasan.</dc:description><dc:date>2017-06-01T00:00:00-07:00</dc:date><dc:type>text</dc:type><dc:type>Master's Thesis</dc:type>
+<dc:format>application/pdf</dc:format><dc:identifier>https://fount.aucegypt.edu/etds/1007</dc:identifier>
+<dc:identifier>https://fount.aucegypt.edu/cgi/viewcontent.cgi?article=1007&amp;context=etds</dc:identifier>
+<dc:publisher>Egyptology</dc:publisher><dc:publisher>The American University in Cairo</dc:publisher><dc:rights>Open access. The author retains all rights.</dc:rights><dc:language>en</dc:language>
+</oai_dc:dc></metadata></record>
+<resumptionToken completeListSize="15" cursor="0">page2token</resumptionToken></ListRecords></OAI-PMH>

@@ -271,14 +271,19 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
 
     @app.get("/api/search")
     def search(q: str = Query(min_length=1, max_length=300), k: int = Query(5, ge=1, le=20),
-               who: Principal = Depends(rate_limited)):
+               type: str = Query("", max_length=40), department: str = Query("", max_length=120),
+               advisor: str = Query("", max_length=120), year_from: int | None = Query(None, ge=1900, le=2100),
+               year_to: int | None = Query(None, ge=1900, le=2100), who: Principal = Depends(rate_limited)):
         """Hybrid search without the model: ranked passages the caller may see. Cheap, and still works when
-        the model is down or over budget."""
+        the model is down or over budget. Optional metadata filters (theses): type, department, advisor, years."""
         from .arabic import detect_lang
-        hits = chat.index.search(q, k, chat._expand(q, detect_lang(q)), who.access)
-        return {"query": q, "results": [{"score": round(sc, 4), "title": c.title, "section": c.section,
-                                         "url": c.source, "page": c.page, "updated": c.updated,
-                                         "snippet": c.text.partition("\n")[2][:300]} for sc, c in hits]}
+        filters = {"type": type, "department": department, "advisor": advisor, "year_from": year_from,
+                   "year_to": year_to}
+        hits = chat.index.search(q, k, chat._expand(q, detect_lang(q)), who.access, filters=filters)
+        return {"query": q, "filters": {k_: v for k_, v in filters.items() if v},
+                "results": [{"score": round(sc, 4), "title": c.title, "section": c.section,
+                             "url": c.source, "page": c.page, "updated": c.updated, "meta": c.meta,
+                             "snippet": c.text.partition("\n")[2][:300]} for sc, c in hits]}
 
     @app.post("/api/cite")
     def cite(body: CiteIn, _: Principal = Depends(rate_limited)):

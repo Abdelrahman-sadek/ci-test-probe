@@ -13,6 +13,7 @@ mcp = ["mcp>=1.2"]
 qdrant = ["qdrant-client>=1.10"]
 dense = ["sentence-transformers>=3"]          # BGE-M3 embeddings + bge-reranker-v2-m3 (AGENTKIT_DENSE=1 / AGENTKIT_RERANK=1)
 tesseract = ["pytesseract", "pillow"]
+redis = ["redis>=5"]
 dev = ["pytest", "httpx", "mcp>=1.2", "fastapi>=0.110", "uvicorn>=0.29", "pyjwt[crypto]>=2.8", "cryptography>=42", "qdrant-client>=1.10"]
 a11y = ["playwright>=1.45", "axe-playwright-python>=0.1.4"]
 
