@@ -30,16 +30,45 @@ class BudgetMonitor:
         self.thresholds = sorted(int(x) for x in os.getenv("AGENTKIT_BUDGET_ALERTS", "50,80,95").split(",") if x)
         self.brake_at = float(os.getenv("AGENTKIT_BUDGET_BRAKE", "0.8"))
         self.notify = notify or default_notify
+        self.pending = 0.0  # estimated cost of calls in flight: reserved before a call, released after
+        import threading
+        self._lock = threading.Lock()
+
+    def estimate(self) -> float:
+        env = os.getenv("AGENTKIT_EST_CALL_USD")
+        if env:
+            return float(env)
+        row = self.appdb.db.execute("SELECT AVG(cost) FROM (SELECT cost FROM llm_usage WHERE cost > 0 "
+                                    "ORDER BY id DESC LIMIT 50)").fetchone()
+        return row[0] or 0.0  # no history yet: the first call may overshoot by itself, never more
+
+    def reserve(self) -> float | None:
+        """Reserve one call's estimated cost; None when it would cross a cap. Parallel requests therefore
+        cannot overshoot the cap by more than the estimate error."""
+        est = self.estimate()
+        with self._lock:
+            for period, cap in self.caps.items():
+                if cap and self.spend(period) + self.pending + est > cap:
+                    return None
+            self.pending += est
+        return est
+
+    def release(self, est: float):
+        with self._lock:
+            self.pending = max(0.0, self.pending - est)
 
     def spend(self, period: str, now: float | None = None) -> float:
         return self.appdb.spend(_start_of(period, now or time.time()))
 
     def fraction(self, now: float | None = None) -> float:
         """Highest share of any configured cap used so far (0 when no cap is set)."""
-        return max((self.spend(p, now) / cap for p, cap in self.caps.items() if cap), default=0.0)
+        return max(((self.spend(p, now) + self.pending) / cap for p, cap in self.caps.items() if cap), default=0.0)
 
     def over(self) -> bool:
-        return self.fraction() >= 1.0
+        """At the cap, or the next call (estimated) would cross it."""
+        est = self.estimate()
+        return self.fraction() >= 1.0 or any(cap and self.spend(p) + self.pending + est > cap
+                                             for p, cap in self.caps.items())
 
     def brake(self) -> bool:
         return self.fraction() >= self.brake_at

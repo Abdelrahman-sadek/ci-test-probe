@@ -51,6 +51,7 @@ class Endpoint:
     priority: int = 5
     api_key_env: str = ""                             # name of the env var holding this server's key
     max_tokens: int = 800
+    max_concurrency: int = 8                          # requests in flight per server; extra calls wait
 
 
 def load_endpoints(path: str | Path | None = None) -> list[Endpoint]:
@@ -84,6 +85,8 @@ class LocalLLM(LLM):
         self.endpoints = endpoints if endpoints is not None else load_endpoints()
         self.timeout = timeout or float(os.getenv("AGENTKIT_LLM_TIMEOUT", "60"))
         self.post = post  # injectable for tests: post(url, payload, endpoint) -> dict
+        import threading
+        self._slots = {e.name: threading.BoundedSemaphore(max(1, e.max_concurrency)) for e in self.endpoints}
 
     def candidates(self, role: str, lang: str = "", agent: str = "") -> list[Endpoint]:
         fallback_role = {"fast": "answer"}.get(role)  # no fast model: the answer model does the checks
@@ -94,6 +97,10 @@ class LocalLLM(LLM):
         agent = USAGE_CTX.get().get("agent", "")
         errors = []
         for ep in self.candidates(role, lang, agent):
+            slot = self._slots[ep.name]
+            if not slot.acquire(timeout=float(os.getenv("AGENTKIT_LOCAL_QUEUE_WAIT", "5"))):  # saturated: next server
+                errors.append(f"{ep.name}: busy")
+                continue
             try:
                 data = self._post(ep, {"model": ep.model, "messages": messages, "max_tokens": max_tokens,
                                        "temperature": 0.1})
@@ -101,6 +108,8 @@ class LocalLLM(LLM):
                 errors.append(f"{ep.name}: {type(e).__name__}")
                 METRICS.inc("agentkit_local_failover_total", endpoint=ep.name)
                 continue
+            finally:
+                slot.release()
             usage = data.get("usage") or {}
             METRICS.inc("agentkit_local_requests_total", endpoint=ep.name, role=role)
             METRICS.record_usage(ep.model, SimpleNamespace(input_tokens=usage.get("prompt_tokens", 0),

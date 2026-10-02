@@ -64,13 +64,11 @@ def test_thresholds_alert_once_and_brake_then_cap(billed):
     chat.budget.caps["day"] = 0.0075  # one answer + grade ≈ $0.0062 → 83 %
     chat.ask("How many books can undergraduates borrow?")
     assert [m.split("%")[0][-2:] for m in sent] == ["50", "80"]
-    assert chat.llm.brake and chat.llm.status() == "ok"
+    assert chat.llm.brake  # soft brake on: optional calls stop first
+    assert chat.llm.status() == "budget"  # one more answer (~$0.003 estimated) would cross the cap
     ans = chat.ask("Can alumni borrow books?")
-    assert "grade" not in [s["step"] for s in ans.trace]  # soft brake: optional calls stop first
-    chat.ask("How long can graduate students keep books?")
-    assert chat.llm.status() == "budget"
-    assert sum("80%" in m for m in sent) == 1  # never repeated in the same day
-    assert chat.ask("Can alumni borrow books?").degraded == "budget"
+    assert ans.degraded == "budget" and "grade" not in [s["step"] for s in ans.trace]
+    assert db.spend(0) <= 0.0075 and sum("80%" in m for m in sent) == 1  # never over the cap, alert once
 
 
 def test_answers_are_recorded_redacted(billed):
@@ -97,8 +95,9 @@ def test_roles_gate_tabs(app):
     client, chat, db = app
     viewer, staff, admin = (tok("v@x", ["library-viewers"]), tok("s@x", ["library-staff"]),
                             tok("a@x", ["library-staff-admin"]))
-    assert client.get("/admin/api/role", headers=viewer).json()["tabs"] == ["today", "trends", "conversations", "gaps",
-                                                                          "evaluations"]
+    assert client.get("/admin/api/role", headers=viewer).json()["tabs"] == ["today", "trends", "gaps", "evaluations"]
+    assert client.get("/admin/api/dashboard/conversations", headers=viewer).status_code == 403
+    assert client.get("/admin/api/dashboard/conversations", headers=staff).status_code == 400  # reason required
     assert client.get("/admin/api/dashboard/costs", headers=viewer).status_code == 403
     assert client.get("/admin/api/dashboard/tickets", headers=staff).status_code == 200
     assert client.get("/admin/api/dashboard/system", headers=staff).status_code == 403
@@ -116,11 +115,11 @@ def test_every_tab_returns_data_and_today_matches(app):
     names = client.get("/admin/api/role", headers=admin).json()["tabs"]
     assert len(names) == 13
     for n in names:
-        r = client.get(f"/admin/api/dashboard/{n}", headers=admin)
+        r = client.get(f"/admin/api/dashboard/{n}?reason=quality+review", headers=admin)
         assert r.status_code == 200, (n, r.text)
     today = client.get("/admin/api/dashboard/today", headers=admin).json()["data"]
     assert today["questions"] == 3 and today["modes"] == {"answer": 2, "handoff": 1}
-    conv = client.get("/admin/api/dashboard/conversations?mode=handoff", headers=admin).json()["data"]["rows"]
+    conv = client.get("/admin/api/dashboard/conversations?mode=handoff&reason=check+handoffs", headers=admin).json()["data"]["rows"]
     assert [r["mode"] for r in conv] == ["handoff"]
 
 
@@ -128,10 +127,11 @@ def test_staff_actions_are_audited(app):
     client, chat, db = app
     staff, admin = tok("s@x", ["library-staff"]), tok("a@x", ["library-staff-admin"])
     client.post("/admin/api/notices", json={"title": "Closed Friday", "body": "b"}, headers=staff)
-    client.get("/admin/api/dashboard/conversations", headers=staff)
+    client.get("/admin/api/dashboard/conversations?reason=weekly+quality+review", headers=staff)
     client.post("/admin/api/maintenance", json={"on": True}, headers=admin)
     acts = client.get("/admin/api/dashboard/security", headers=admin).json()["data"]["admin_actions"]
     assert {a["action"] for a in acts} >= {"notice-add", "view-conversations", "maintenance"}
+    assert any("weekly quality review" in a["detail"] for a in acts)
     assert all("@" not in a["actor"] for a in acts)  # pseudonyms only
 
 
@@ -169,3 +169,25 @@ def test_gap_actions_create_ticket_and_candidates(app, tmp_path, monkeypatch):
     assert any(x["id"] == t and x["kind"] == "content-gap" for x in db.tickets())
     assert client.post(f"/admin/api/gaps/{cid}/candidate", headers=staff).json()["appended"] >= 1
     assert "gap-" in (tmp_path / "cand.md").read_text(encoding="utf-8")
+
+
+def test_parallel_calls_cannot_overshoot_the_cap(tmp_path, monkeypatch):
+    import threading
+    import time as _t
+    monkeypatch.setenv("AGENTKIT_EST_CALL_USD", "0.006")
+    db = AppDB(tmp_path / "c.db")
+
+    class Slow(Billed):
+        def answer(self, system, question, sources):
+            _t.sleep(0.05)  # all requests are in flight at once
+            return super().answer(system, question, sources)
+    llm = ResilientLLM(Slow())
+    mon = attach(llm, db, notify=lambda m: None)
+    mon.caps["day"] = 0.02  # room for 3 calls of $0.006
+    src = [{"title": "t", "blocks": ["t", "Alumni can borrow 5 books."]}]
+    out = []
+    threads = [threading.Thread(target=lambda: out.append(llm.answer("s", "alumni books", src))) for _ in range(10)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    METRICS.sinks.clear()
+    assert sum(1 for g in out if not g.degraded) == 3 and db.spend(0) <= 0.02

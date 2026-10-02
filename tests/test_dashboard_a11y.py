@@ -65,6 +65,10 @@ def test_every_tab_renders_and_passes_axe(page, dash_url):
     assert len(tabs) == 14
     for name in tabs:
         page.click(f"#t-{name}")
+        if name == "conversations":
+            page.wait_for_selector("#f-reason")
+            page.fill("#f-reason", "accessibility test")
+            page.click("#d-conversations button")
         page.wait_for_selector(f"#d-{name}:not([aria-busy])", state="attached")
         text = page.inner_text(f"#p-{name}")
         assert "Not available" not in text, (name, text[:200])

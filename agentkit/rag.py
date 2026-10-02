@@ -465,6 +465,13 @@ def ingest(paths: list[str | Path], llm: LLM, index: BaseIndex | None = None, co
              if f.is_file() and not f.name.startswith((".", "README"))
              and not f.name.endswith((".meta.json", ".corrections.json"))]
     known = index.manifest()
+    # a file that vanished from an ingested folder (deleted, embargoed upstream) leaves the index too
+    folders = [str(Path(x)) for x in paths if Path(x).is_dir()]
+    for origin in list(known):
+        if any(origin.startswith(d.rstrip("/") + "/") for d in folders) and not Path(origin).exists():
+            index.remove_origin(origin)
+            index.manifest_set(origin, None)
+            known.pop(origin)
 
     def parse(f: Path):
         origin = str(f)

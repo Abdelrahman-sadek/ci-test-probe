@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/Abdelrahman-sadek/AUC-starterkit/actions/workflows/lint-agents.yml/badge.svg)](https://github.com/Abdelrahman-sadek/AUC-starterkit/actions)
 ![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
-![Tests](https://img.shields.io/badge/tests-198%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-205%20passing-2ea44f)
 ![WCAG](https://img.shields.io/badge/WCAG%202.2-AA%20(axe%200%20violations)-2ea44f)
 ![Red team](https://img.shields.io/badge/red--team-30%2F30%20blocked-2ea44f)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -68,7 +68,7 @@ More: [tickets](docs/screenshots/dashboard-tickets.png) · [evaluations](docs/sc
 - **Answers only from sources.** Every sentence cites a numbered source, and quotes are checked verbatim against the passage. If nothing relevant is found, the question goes to a librarian; the assistant does not guess.
 - **Routing to five AUC agents:** concierge, research assistant, catalog navigator, special collections guide, guardrails. Research questions with no match get a search strategy instead of invented titles.
 - **Agentic retrieval.** Retrieve, then grade the passages (live mode), then rewrite the query and retry once before handing off. The offline rewrite fixes spelling against the index vocabulary.
-- **Evaluator-critic.** Research and policy answers are checked before they are shown: quotes, numbers, links and style, then (live mode) a fast-model score. One revision is allowed; otherwise the answer becomes a handoff that keeps the source links.
+- **Evaluator-critic.** Research and policy answers are checked before they are shown. Each number must keep its unit ("5 books", not a "5" from a fine). quotes, numbers, links and style, then (live mode) a fast-model score. One revision is allowed; otherwise the answer becomes a handoff that keeps the source links.
 - **Guardrails.** Prompt injection (EN/AR/Franco), credential and private-data requests, writing graded work, crisis messages and other universities' libraries are all caught before the model is called.
 - **Streaming, caching and resilience.** Answers stream; there is an exact-match cache plus an optional semantic cache with strict safety rules. A circuit breaker and daily budget fall back to "search results only" answers with a banner.
 - **Answer style.** Greetings, praise, closing offers and buzzwords are removed in English and Arabic (rules adapted from [antislop](https://github.com/miqdadbadjuber/anti-slop)) without touching cited sentences.
@@ -94,7 +94,7 @@ More: [tickets](docs/screenshots/dashboard-tickets.png) · [evaluations](docs/sc
 
 ### Research tools
 - **Reference export** from any answer: APA 7, MLA 9, BibTeX, RIS (Zotero, Mendeley, EndNote), EndNote `.enw` and CSL-JSON. Only fields the source provides are exported.
-- **Thesis search.** `agentkit harvest-theses` pulls open-access theses from the repository over OAI-PMH. It resumes after interruption and skips embargoed, deleted and non-thesis records. Questions such as "economics theses since 2020 supervised by Sara Ibrahim" are filtered by department, advisor and year; `/api/search` accepts the same filters.
+- **Thesis search.** Run nightly from cron; a record that is deleted or newly embargoed upstream is removed from the index on the next run. `agentkit harvest-theses` pulls open-access theses from the repository over OAI-PMH. It resumes after interruption and skips embargoed, deleted and non-thesis records. Questions such as "economics theses since 2020 supervised by Sara Ibrahim" are filtered by department, advisor and year; `/api/search` accepts the same filters.
 
 ### Staff dashboard
 - **14 tabs in five groups:**
@@ -107,8 +107,11 @@ More: [tickets](docs/screenshots/dashboard-tickets.png) · [evaluations](docs/sc
 - **Costs.**
   - Every model call is stored with plugin, agent and purpose (answer, grade, rewrite, critic, OCR), so spend survives restarts.
   - Alerts at 50/80/95 % go out by email or webhook.
-  - A soft brake at 80 % pauses the optional calls before answers degrade.
+  - A soft brake at 80 % pauses the optional calls (grading, rewriting, critic). Answers continue normally.
+  - At the cap, or when the next call's estimated cost would cross it, answers come from search results with a banner. Nothing is queued or rejected.
+  - Each call reserves its estimated cost before running, so parallel requests cannot overshoot the cap.
 - **Knowledge gaps.** Unanswered and thumbs-down questions are grouped across languages. A group is shown only when at least 3 people asked, and buttons draft a notice, file a page task or add test cases.
+- **Conversations are staff-only.** Questions are shown redacted, and a stated reason for access is required and logged. Stored answers follow the 30-day retention.
 - **Accessible.** Every tab passes axe-core (WCAG 2.2 AA) in Chromium, works from the keyboard, and each chart has a table view and per-bar tooltips.
 
 ### Security and privacy
@@ -166,7 +169,7 @@ flowchart LR
 | OCR | PyMuPDF, Pillow pre-processing, Tesseract (`ara+eng`), Claude or local vision model |
 | Storage | SQLite (index, AppDB: answers, usage, tickets, feedback, audit), JSONL encrypted logs, optional Redis for the semantic cache |
 | Security | PyJWT/JWKS, Fernet, rate limiter, sandboxed parsing (fork + rlimits), bandit, pip-audit, hash-pinned lockfile, CycloneDX SBOM |
-| Quality | pytest (198 tests), axe-core with Playwright and Chromium, golden/dev/held-out/thesis eval sets, 30-attack red team |
+| Quality | pytest (205 tests), axe-core with Playwright and Chromium, golden/dev/held-out/thesis eval sets, 30-attack red team |
 | Deploy | Docker (non-root, read-only filesystem), docker-compose with Caddy and optional Qdrant, GitHub Actions CI |
 
 ```
@@ -208,7 +211,7 @@ agentkit harvest-theses https://fount.aucegypt.edu/do/oai/ --limit 100 --ingest 
 agentkit tickets-check && agentkit freshness    # daily cron: SLA escalation, stale sources
 agentkit snapshots && agentkit rollback         # undo a bad ingest
 agentkit export-searchable scan.pdf -o out.pdf  # OCR text layer for a scan
-pytest -q                                       # 198 tests including real-browser accessibility
+pytest -q                                       # 205 tests including real-browser accessibility
 ```
 
 The main settings are listed in [`.env.example`](.env.example): models, budget and alerts, SSO, connectors (LibCal, Primo, Alma, LibAnswers), SMTP, retention, roles, critic, semantic cache, local models and harvesting.
@@ -217,7 +220,7 @@ The main settings are listed in [`.env.example`](.env.example): models, budget a
 
 ## Server requirements
 
-Measured on this repository: the app uses about **80 MB RSS** serving the seed corpus. SQLite search p95 is **40 ms at 20k chunks** on 4 vCPU (232 ms at 100k). The HTTP load test (20 clients, offline model, cache off) ran at **218 req/s** with p95 105 ms. With Claude, answer latency is dominated by the model call (typically 1–4 s streamed). The app server needs no GPU.
+Measured on this repository: the app uses about **80 MB RSS** serving the seed corpus. SQLite search p95 is **40 ms at 20k chunks** on 4 vCPU (232 ms at 100k). The HTTP load test (20 clients, offline model, cache off) ran at **218 req/s** with p95 105 ms. With Claude, answer latency is dominated by the model call (estimate: 1–4 s streamed; research answers held for the critic add one fast-model call). The app server needs no GPU.
 
 | Tier | Typical use | CPU | RAM | Disk | Notes |
 |---|---|---|---|---|---|
@@ -262,6 +265,18 @@ How a request is routed:
 
 Local models have no native citation API, so answers are prompted to cite `[n]`. Invalid numbers are dropped, and each cited source gets its best-matching sentence as the verbatim quote, so the critic and citation checks work as they do with Claude. The System tab lists each server with its requests and failovers; costs show tokens per model at $0.
 
+### What data leaves the university
+| Mode | Leaves AUC | Stays inside |
+|---|---|---|
+| Claude | the redacted question, the retrieved passages and the system prompt, sent over HTTPS to the Anthropic API | identities, account data (Alma answers never reach a model), logs, dashboard data, documents |
+| Local models | nothing (only library APIs such as LibCal/Primo, as in Claude mode) | everything |
+
+### Failover order
+1. Local servers in pool order: language or agent preference first, then `priority`. A busy server (all `max_concurrency` slots taken for `AGENTKIT_LOCAL_QUEUE_WAIT` seconds) is skipped.
+2. When every server for a role fails: answers come from search results with a banner, OCR falls back to Tesseract, and the optional checks are skipped.
+
+Claude is never called automatically from local mode, so data stays inside.
+
 ### Recommended models
 These are starting points; run `agentkit eval --set golden|dev|heldout|theses` on your hardware before choosing, because Arabic dialect quality varies a lot between models. Check each licence for university use [VERIFY].
 
@@ -279,7 +294,7 @@ Newer families such as Qwen3 and Gemma 3 are also worth testing on the same eval
 
 ### GPU memory and hardware
 
-Rule of thumb for model weights: parameters × bytes per parameter. BF16 is 2 bytes, INT8 is 1, and 4-bit AWQ/GPTQ is about 0.55–0.6. Add 20–40 % for the KV cache at 8–16 concurrent requests with 8–16k context.
+**All figures in this section are estimates, not measurements on this project; measure on your hardware.** Rule of thumb for model weights: parameters × bytes per parameter. BF16 is 2 bytes, INT8 is 1, and 4-bit AWQ/GPTQ is about 0.55–0.6. Add 20–40 % for the KV cache at 8–16 concurrent requests with 8–16k context.
 
 | Model size | 4-bit (AWQ/GPTQ) | 8-bit | BF16 |
 |---|---|---|---|
@@ -291,9 +306,9 @@ Rule of thumb for model weights: parameters × bytes per parameter. BF16 is 2 by
 
 | Setup | GPUs | Runs | Host |
 |---|---|---|---|
-| **Small pilot** | 1× 24 GB (RTX 4090, L4, A10G) | 14B AWQ answers + 3B fast; Tesseract for OCR | 8 vCPU, 32 GB RAM, 200 GB NVMe |
-| **Recommended** | 1× 48 GB (L40S, RTX 6000 Ada, A6000) or 2× 24 GB | 32B AWQ answers + 7B fast + 7B vision | 16 vCPU, 64 GB RAM, 500 GB NVMe |
-| **Large** | 2× 80 GB (A100/H100) | 72B AWQ answers (tensor parallel) + Arabic 7B + 7B fast + vision | 32 vCPU, 128 GB RAM, 1 TB NVMe |
+| **Small pilot** (estimate) | 1× 24 GB (RTX 4090, L4, A10G) | 14B AWQ answers + 3B fast; Tesseract for OCR | 8 vCPU, 32 GB RAM, 200 GB NVMe |
+| **Recommended** (estimate) | 1× 48 GB (L40S, RTX 6000 Ada, A6000) or 2× 24 GB | 32B AWQ answers + 7B fast + 7B vision | 16 vCPU, 64 GB RAM, 500 GB NVMe |
+| **Large** (estimate) | 2× 80 GB (A100/H100) | 72B AWQ answers (tensor parallel) + Arabic 7B + 7B fast + vision | 32 vCPU, 128 GB RAM, 1 TB NVMe |
 | **CPU only (demo)** | none | 3–8B Q4 GGUF with Ollama/llama.cpp; a few tokens/s per user | 16+ cores, 32 GB RAM |
 
 Serving examples:
@@ -324,11 +339,11 @@ Offline numbers below use the deterministic extractive stand-in. Retrieval numbe
 |---|---|
 | Golden questions (40: 23 EN, 12 Arabic, 5 Franco), JSON and SQLite | **40/40**, recall@5 1.0, MRR 1.0, also with critic and semantic cache on |
 | Held-out (20, never tuned on) | **11/20** on the blind run; 16/20 after general fixes; recall@5 1.0 |
-| Thesis search (30, fictional repository) | first run 20/30 (recall 0.778); now 24/30, recall 0.893 (target 0.9: cross-language topics need BGE-M3 or a live model) |
+| Thesis search (30, fictional repository) | first run 20/30 (recall 0.778); now 25/30, recall 0.893 (target 0.9: cross-language topics need BGE-M3 or a live model) |
 | Red team | **30/30** attacks blocked |
 | Accessibility | axe-core WCAG 2.2 AA: **0 violations** on chat (EN/AR), all 14 dashboard tabs, request and privacy pages |
 | OCR bench (Tesseract, synthetic) | CER 0.000 on clean/rotated/blurred/noisy/low-res EN and AR; diacritized Arabic routed to staff correction |
-| Tests and security | 198 tests; bandit 0 medium/high; pip-audit 0; hash-pinned lockfile; SBOM in CI |
+| Tests and security | 205 tests; bandit 0 medium/high; pip-audit 0; hash-pinned lockfile; SBOM in CI |
 | Independent review | three rounds with two other models: **OK** from both for entering the gated pilot |
 
 ---

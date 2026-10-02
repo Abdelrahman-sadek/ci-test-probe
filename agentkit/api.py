@@ -486,15 +486,17 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
 
     @app.get("/admin/api/dashboard/{name}")
     def dashboard_tab(name: str, days: int = Query(30, ge=1, le=365), mode: str = "", agent: str = "",
-                      lang: str = "", who: Principal = Depends(principal)):
+                      lang: str = "", reason: str = Query("", max_length=200), who: Principal = Depends(principal)):
         from .dashboard import TABS, allowed, tab
         if name not in TABS:
             raise HTTPException(404, "unknown tab")
         if not allowed(who.role, name):
             raise HTTPException(403, "your role cannot open this tab")
         need(appdb)
-        if name == "conversations":
-            audit(who, "view-conversations", f"{days}d {mode} {agent} {lang}".strip())
+        if name == "conversations":  # reading questions needs a stated reason, kept in the audit trail
+            if len(reason.strip()) < 3:
+                raise HTTPException(400, "state a reason for viewing conversations")
+            audit(who, "view-conversations", f"{reason.strip()} · {days}d {mode} {agent} {lang}".strip())
         now = time.time()
         return tab(chat, name, now - days * 86400, now, mode=mode, agent=agent, lang=lang,
                    index_path=getattr(jobs, "save_path", ""))

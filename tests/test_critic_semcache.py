@@ -161,3 +161,39 @@ def test_redis_store_round_trips_answers(sem):
     hit = other_worker.ask("how many books are alumni allowed to borrow")
     assert hit.trace[0]["step"] == "semantic_cache" and hit.text == first.text
     assert hit.sources and hit.sources[0][1].title == first.sources[0][1].title
+
+
+def test_number_about_something_else_is_caught():
+    from agentkit.rag import Chunk
+    c = Chunk(id="a", text="Fines › Lost items\nAlumni can borrow 5 books. A lost book costs 300 pounds.", title="F",
+              section="", source="https://library.aucegypt.edu/f", page=1, lang="en", method="text")
+    assert critic.check("Alumni can borrow 5 books [1].", {}, [(1, c)]) == []
+    bad = critic.check("Alumni can borrow 300 books [1].", {}, [(1, c)])
+    assert any("something else" in i for i in bad)
+
+
+FALSE_HIT_PAIRS = [  # near-duplicates whose answers differ: the cache must never confuse them
+    ("How many books can alumni borrow?", "How many books can undergraduates borrow?"),
+    ("How many books can faculty borrow?", "How many books can graduate students borrow?"),
+    ("Where is the rare books library?", "When is the rare books library open?"),
+    ("Can I renew a book 2 times?", "Can I renew a book 3 times?"),
+    ("How long can alumni keep books?", "How many books can alumni keep?"),
+    ("ممكن الخريجين يستعيروا كتب؟", "Can alumni borrow books?"),
+]
+
+
+def test_false_hit_set_has_zero_hits(sem):
+    for a, b in FALSE_HIT_PAIRS:
+        sem.ask(a)
+        assert sem.ask(b).trace[0]["step"] != "semantic_cache", (a, b)
+
+
+def test_new_notice_invalidates_cached_answers(seed_index, tmp_path, monkeypatch):
+    from agentkit.appdb import AppDB
+    monkeypatch.setenv("AGENTKIT_SEMCACHE", "1")
+    db = AppDB(tmp_path / "a.db")
+    chat = LibraryChat(Index(seed_index.chunks), FakeLLM(), cache=None, appdb=db)
+    chat.ask("How many books can alumni borrow?")
+    assert chat.ask("how many books are alumni allowed to borrow").trace[0]["step"] == "semantic_cache"
+    db.add_notice("Borrowing paused", "Borrowing is paused during inventory week.")
+    assert chat.ask("how many books are alumni allowed to borrow").trace[0]["step"] != "semantic_cache"

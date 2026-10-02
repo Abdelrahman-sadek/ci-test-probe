@@ -155,7 +155,9 @@ def harvest(base_url: str, out: str | Path, set_spec: str = "", fulltext: bool =
             if meta["type"] != "thesis":
                 report["not_thesis"] += 1
                 continue
-            if restricted(meta):
+            if restricted(meta):  # also removes a record that became embargoed since the last harvest
+                for f in out.glob(_slug(meta["id"]) + ".*"):
+                    f.unlink()
                 report["skipped_restricted"] += 1
                 continue
             pdf = None

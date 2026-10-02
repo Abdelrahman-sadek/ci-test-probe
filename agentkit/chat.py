@@ -520,6 +520,10 @@ class LibraryChat:
                 hits = [h for h in hits if h[1].id != twin[1].id]
                 hits.insert(0, twin)
         safe_q = redact(question)  # LLM02: identifiers never leave for the model provider
+        if not hits and filters:  # a thesis search with no match: point to the repository, never improvise
+            return "final", Answer("I couldn't find a matching thesis among the harvested repository records. "
+                                   "Search AUC Knowledge Fountain directly (https://fount.aucegypt.edu), or ask a "
+                                   "librarian to check embargoed and print-only theses.", agent, lang, mode="handoff")
         if not hits and agent in STRATEGY_AGENTS:
             text = self.llm.complete(self._system(agent, "- No library documents matched. Give a search strategy "
                                                          "only (concepts, EN+AR keywords, Boolean string, where to "
@@ -664,7 +668,9 @@ class LibraryChat:
             return None, None
         from .semcache import signature
         t0 = time.perf_counter()
-        sig = signature(question, detect_lang(question), route(question), self.index.version, access)
+        notices = "|".join(f"{n['id']}{n.get('valid_to', '')}" for n in self.appdb.notices()) if self.appdb else ""
+        # a new or expired notice changes the version, so answers cached before it are never reused
+        sig = signature(question, detect_lang(question), route(question), f"{self.index.version}:{hash(notices)}", access)
         hit, sim, cost = self.semcache.get(question, sig)
         if hit is None:
             return None, sig

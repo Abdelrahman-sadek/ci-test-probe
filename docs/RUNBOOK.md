@@ -3,6 +3,7 @@
 ## Health checks
 - `GET /healthz`: `{"status": "ok", "chunks": <n>, "index_version": "…", "llm": "ok" | "outage" | "budget"}`.
 - `GET /metrics` (admin): `agentkit_llm_failures_total`, `agentkit_degraded_total`, `agentkit_handoff_failures_total`, latency per stage, cost.
+- Nightly cron: `agentkit harvest-theses <oai-url> --out data/theses --ingest` (incremental; records deleted or newly embargoed upstream are removed from the index).
 - Daily cron: `agentkit tickets-check` (escalates overdue handoffs) and `agentkit freshness` (stale sources, expiring notices); mail the freshness output to the content owners.
 - Before any release to real users: `agentkit preflight` must print "ready for real users". It blocks on [VERIFY] facts, missing AUC sign-off (`knowledge/auc-library/signoff.json`), evals not run live on the current index, open sign-in, spoofable proxy identity, unencrypted logs and the default log salt.
 
@@ -64,6 +65,7 @@ Each source in `knowledge/auc-library/sources.md` names its owner. Defaults unti
 - **SSO:** `AGENTKIT_AUTH=proxy` trusts `X-Forwarded-User`/`-Groups` only when the request also carries `X-Proxy-Secret` equal to `AGENTKIT_PROXY_SECRET`; `deploy/Caddyfile` strips client-sent identity headers and adds the secret. In `docker-compose.yml` the app only `expose`s port 8000 on the internal network, so only Caddy can reach it. In JWT mode, prefer RS256 keys from `AGENTKIT_JWT_JWKS` over a shared HS256 secret. `AGENTKIT_TRUST_PROXY=1` only makes Uvicorn read the client IP from the proxy (for rate limits).
 - **WhatsApp webhook:** requests without a valid `X-Hub-Signature-256` are rejected; rotate the app secret if it leaks.
 - **Staff page:** admin APIs need the admin role or `X-API-Key`; keep the key out of browsers on shared machines and rotate it each term. Restrict `/admin` and `/metrics` to campus ranges with the commented block in `deploy/Caddyfile`.
+- **Audit log:** staff actions (notices, approvals, uploads, ticket changes, kill switch, conversation views with their stated reason, data requests) are stored in `data/app.db` under pseudonyms. Only admins see them (Security tab). They follow the AppDB backups; encrypt the disk or volume at rest, and keep the file off shared drives.
 - **Access review:** monthly, list who holds the admin role and the admin key; remove leavers. Rotate `AGENTKIT_ADMIN_KEY`, `AGENTKIT_PROXY_SECRET` and the WhatsApp app secret each term or on any suspected leak: set the new value in `.env`, `docker compose up -d`, confirm `/healthz`, revoke the old one. Rotating `AGENTKIT_LOG_KEY` makes older encrypted logs unreadable, so rotate it at a retention boundary.
 - **Limits of this review:** these are design checks and automated tests, not a penetration test. An independent test of SSO, the staff page and the WhatsApp webhook is a launch requirement (see PILOT.md).
 - **Single process:** the circuit breaker and daily budget live in the server process. The container runs one process; if you run several, the budget applies to each one.

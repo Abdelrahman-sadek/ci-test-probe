@@ -104,3 +104,37 @@ def test_pool_config_file(tmp_path):
         load_endpoints(cfg)
     from agentkit import ROOT
     assert len(load_endpoints(ROOT / "config/local-models.example.json")) == 5
+
+
+def test_busy_server_overflows_to_the_next(monkeypatch):
+    import threading
+    import time
+    monkeypatch.setenv("AGENTKIT_LOCAL_QUEUE_WAIT", "0.05")
+    used, gate = [], threading.Event()
+
+    def post(url, payload, ep):
+        used.append(ep.name)
+        if ep.name == "main":
+            gate.wait(1)
+        return {"choices": [{"message": {"content": "ok"}}], "usage": {}}
+    pool = [Endpoint("main", "http://a/v1", "m", ["answer"], priority=1, max_concurrency=1),
+            Endpoint("second", "http://b/v1", "m2", ["answer"], priority=2)]
+    llm = LocalLLM(pool, post=post)
+    t = threading.Thread(target=lambda: llm.complete("s", "q"))
+    t.start()
+    time.sleep(0.05)
+    llm.complete("s", "q")  # main is full: goes to the second server instead of waiting
+    gate.set()
+    t.join()
+    assert used == ["main", "second"]
+
+
+def test_fingerprint_names_the_local_models(monkeypatch, tmp_path):
+    from agentkit.evals import config_fingerprint
+    cfg = tmp_path / "m.json"
+    monkeypatch.setenv("AGENTKIT_LLM", "local")
+    monkeypatch.setenv("AGENTKIT_LOCAL_MODELS", str(cfg))
+    cfg.write_text(json.dumps({"models": [{"name": "a", "url": "http://x/v1", "model": "qwen-14b", "roles": ["answer"]}]}))
+    one = config_fingerprint()
+    cfg.write_text(json.dumps({"models": [{"name": "a", "url": "http://x/v1", "model": "qwen-32b", "roles": ["answer"]}]}))
+    assert config_fingerprint() != one  # preflight will demand a new eval for a different model

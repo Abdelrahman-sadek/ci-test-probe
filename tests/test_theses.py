@@ -116,3 +116,16 @@ def test_search_api_filters(thesis_indexes):
     r = client.get("/api/search", params={"q": "water", "type": "thesis", "year_to": 2016}).json()
     assert r["results"] and all(int(x["meta"]["year"]) <= 2016 for x in r["results"])
     assert client.get("/api/search", params={"q": "x", "year_from": 1500}).status_code == 422
+
+
+def test_embargo_added_upstream_removes_indexed_thesis(tmp_path):
+    out = tmp_path / "th"
+    harvest(BASE, out, fetch=fetcher())
+    idx = Index()
+    ingest([str(out)], FakeLLM(), idx, review=False)
+    assert any("Water Pricing" in c.title for c in idx.chunks)
+    page = (FIX / "page1.xml").read_text().replace("Open access. The author retains all rights.", "Embargoed until 2099.", 1)
+    (out / "state.json").unlink()  # full re-harvest
+    harvest(BASE, out, fetch=lambda u: page.encode() if "page2token" not in u else (FIX / "page2.xml").read_bytes())
+    ingest([str(out)], FakeLLM(), idx, review=False)
+    assert not any("Water Pricing" in c.title for c in idx.chunks)  # never searchable again

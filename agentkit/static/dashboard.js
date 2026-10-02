@@ -90,6 +90,9 @@
         f.append(el("label", {for: "f-" + id, text: label}), s);
       };
       sel("mode", "Outcome", d.modes); sel("agent", "Agent", d.agents); sel("lang", "Language", ["en", "ar", "arabizi"]);
+      const rs = el("input", {id: "f-reason", maxlength: "200"}); rs.value = ctx.reason || "";
+      rs.addEventListener("change", () => { ctx.reason = rs.value; show("conversations"); });
+      f.append(el("label", {for: "f-reason", text: "Reason for access (logged)"}), rs);
       return [f, table(d.rows, [["ts", "When", when], ["question", "Question (redacted)"], ["mode", "Outcome"], ["agent", "Agent"],
         ["lang", "Lang"], ["sources", "Sources", (v) => v.join("; ")], ["ms", "ms"],
         ["trace", "Steps", (v) => v.map((s) => s.step).join(" → ")]], "Recent questions")];
@@ -218,6 +221,14 @@
       const res = await api(`/admin/api/dashboard/${name}?${q}`);
       box.replaceChildren(...render[name](res.data, ctx));
     } catch (e) {
+      if (name === "conversations" && String(e.message).startsWith("400")) {  // ask for the reason first
+        const rs = el("input", {id: "f-reason", maxlength: "200"});
+        const go = el("button", {type: "button", text: "Show conversations"});
+        go.addEventListener("click", () => { ctx.reason = rs.value; show("conversations"); });
+        box.replaceChildren(el("p", {class: "note", text: "Questions are shown redacted. State why you need to read them; the reason is logged."}),
+          el("label", {for: "f-reason", text: "Reason for access"}), rs, go);
+        return;
+      }
       box.replaceChildren(el("p", {class: "note", text: "Not available: " + e.message}));
     } finally { box.removeAttribute("aria-busy"); }
   }

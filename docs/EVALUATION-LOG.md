@@ -9,6 +9,26 @@ agentkit --index data/index.db eval --set golden    # also: --set dev, --set hel
 agentkit redteam && agentkit test-agents && pytest -q && python scripts/ocr_bench.py
 ```
 
+## Plan 7 review round (2026-10-02)
+
+Verdicts on plan 7, the local model pool and the README: **Sonnet: OK. Haiku: OK.** Their P1 items were closed in the same round:
+
+| Item | Change | Test |
+|---|---|---|
+| Conversations readable by viewers | Conversations tab is staff-only; a stated reason is required and logged; answers follow the 30-day retention | `test_roles_gate_tabs`, `test_staff_actions_are_audited` |
+| Cost cap race under parallel requests | Each call reserves its estimated cost first; "over" includes the next call's estimate | `test_parallel_calls_cannot_overshoot_the_cap` (10 parallel calls, room for 3 → exactly 3 run) |
+| Critic accepted a number about something else | A number must keep its unit next to it in the source ("300 books" ≠ "300 pounds"); skipped across scripts | `test_number_about_something_else_is_caught` |
+| Semantic cache false hits | Zero hits on a 6-pair near-duplicate set; a new or expired notice invalidates cached answers | `test_false_hit_set_has_zero_hits`, `test_new_notice_invalidates_cached_answers` |
+| Embargo added upstream after indexing | Harvester deletes the record's files; ingest removes chunks whose file vanished from an ingested folder | `test_embargo_added_upstream_removes_indexed_thesis` |
+| "No such thesis" got a search strategy | Zero-hit thesis searches hand off with the repository link | thesis set t28 now passes: 25/30 |
+| Local quality bar per model | Eval fingerprint includes the local model names and roles, so preflight needs an eval on the configured models | `test_fingerprint_names_the_local_models` |
+| Local server overload | `max_concurrency` per server; a saturated server is skipped after `AGENTKIT_LOCAL_QUEUE_WAIT` | `test_busy_server_overflows_to_the_next` |
+| Unmeasured figures stated as fact | README marks hardware and latency figures as estimates; adds a "what leaves the university" table and the failover order | — |
+
+Results: golden 40/40, dev 20/25, held-out 16/20 (unchanged); theses 25/30, recall 0.893 (still below the 0.9 target offline; the gate stays). 205 tests pass; bandit 0.
+
+Open (P2, recorded, not done): hash-chained audit log, weekly batching for gap clusters, a librarian-graded sample for the critic's false-pass rate, a bilingual subject map for thesis keywords, Redis auth/TLS guidance.
+
 ## Local model pool and README (2026-10-02)
 
 - `AGENTKIT_LLM=local` runs the whole pipeline on self-hosted OpenAI-compatible servers. Several models can run at once with roles (answer, fast, vision), language and agent preferences, priorities and failover (`config/local-models.example.json`).

@@ -18,7 +18,7 @@ from .metrics import METRICS
 # tab → (group, minimum role)
 TABS = {
     "today": ("overview", "viewer"), "trends": ("overview", "viewer"),
-    "conversations": ("quality", "viewer"), "gaps": ("quality", "viewer"), "evaluations": ("quality", "viewer"),
+    "conversations": ("quality", "staff"), "gaps": ("quality", "viewer"), "evaluations": ("quality", "viewer"),
     "sources": ("knowledge", "staff"), "ocr": ("knowledge", "staff"),
     "tickets": ("service", "staff"), "librarians": ("service", "staff"),
     "costs": ("operations", "admin"), "performance": ("operations", "admin"), "system": ("operations", "admin"),

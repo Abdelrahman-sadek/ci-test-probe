@@ -283,6 +283,9 @@ class ResilientLLM(LLM):
     def _call(self, name: str, *args, **kwargs):
         import time
         state = self.status()
+        est = self.monitor.reserve() if state == "ok" and self.monitor is not None else 0.0
+        if est is None:  # this call would cross the cap
+            state = "budget"
         if state == "ok":
             try:
                 out = getattr(self.inner, name)(*args, **kwargs)
@@ -294,6 +297,9 @@ class ResilientLLM(LLM):
                 if self.failures >= 3:
                     self.open_until = time.monotonic() + self.cooldown
                 state = "outage"
+            finally:
+                if est:
+                    self.monitor.release(est)
         METRICS.inc("agentkit_degraded_total", reason=state)
         return getattr(self.fallback, name)(*args, **kwargs), state
 

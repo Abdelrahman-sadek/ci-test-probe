@@ -36,15 +36,43 @@ def check(text: str, quotes: dict, cited: list) -> list[str]:
         for q in qs:
             if n not in by_n or normalize(q) not in normalize(by_n[n].text):
                 issues.append(f"quote not found in source [{n}]: {q[:60]}")
-    for num in {m.group(0) for m in _NUM.finditer(body.translate(_AR_DIGITS))}:
+    plain = body.translate(_AR_DIGITS)
+    for m in _NUM.finditer(plain):
+        num = m.group(0)
         if num not in corpus:
             issues.append(f"number {num} is not in the cited sources")
+        elif not _same_context(plain, m, corpus):
+            issues.append(f"number {num} appears in the sources about something else")
     allowed = " ".join([*(c.source for _, c in cited), *(c.text for _, c in cited)])
     for url in _URL.findall(body):
         if url.rstrip(".") not in allowed:
             issues.append(f"link not in the sources: {url}")
     issues += [f"style: {f}" for f in style.findings(body)]
     return issues
+
+
+_ARABIC = re.compile(r"[\u0600-\u06FF]")
+
+
+def _unit(text: str, end: int) -> str:
+    """The first content word after a number ("5 books" → book), or "" when none follows."""
+    from .arabic import tokenize
+    toks = [t for t in tokenize(" ".join(text[end:].split()[:2])) if not t.isdigit()]
+    return toks[0] if toks else ""
+
+
+def _same_context(answer: str, m, corpus: str) -> bool:
+    """A number must keep its unit: "5 books" in the answer needs "5 … book" in the source, not "5 pounds".
+    Skipped when the answer and source use different scripts (an Arabic answer citing an English page)."""
+    from .arabic import tokenize
+    unit = _unit(answer, m.end())
+    if not unit or bool(_ARABIC.search(unit)) != bool(_ARABIC.search(corpus)):
+        return True
+    for occ in re.finditer(rf"(?<![\d.]){re.escape(m.group(0))}(?![\d])", corpus):
+        around = corpus[:occ.start()].split()[-1:] + corpus[occ.end():].split()[:2]  # unit sits next to it
+        if unit in set(tokenize(" ".join(around))):
+            return True
+    return False
 
 
 def review(llm, question: str, text: str, cited: list) -> dict:

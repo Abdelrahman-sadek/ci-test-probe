@@ -1,5 +1,6 @@
 """Golden-set evaluation (routing, answer mode, retrieval recall@k / MRR, citations, key facts) and agent smoke tests."""
 import json
+import os
 import re
 from pathlib import Path
 
@@ -118,6 +119,11 @@ def config_fingerprint() -> str:
     rules. Preflight requires evals to have run on the same fingerprint."""
     import hashlib
     from . import chat as chat_mod, llm as llm_mod
-    parts = [llm_mod.MODEL_SMART, llm_mod.MODEL_FAST, style.RULES, repr(chat_mod.GUARDS), repr(chat_mod.ROUTES),
+    local = ""
+    if os.getenv("AGENTKIT_LLM") == "local":  # an eval on one local model does not certify another
+        from .local_llm import load_endpoints
+        local = "|".join(f"{e.name}={e.model}:{','.join(e.roles)}" for e in load_endpoints())
+    parts = [os.getenv("AGENTKIT_LLM", "claude"), local, llm_mod.MODEL_SMART, llm_mod.MODEL_FAST, style.RULES,
+             repr(chat_mod.GUARDS), repr(chat_mod.ROUTES),
              *(f"{n}:{a.body}" for n, a in sorted(load_all().items()))]
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
