@@ -213,7 +213,9 @@ def system(chat, since: float, until: float, index_path: str = "", **_):
             "connectors": {"libcal": bool(chat.libcal), "primo": bool(chat.catalog), "alma": bool(chat.account),
                            "libanswers": bool(os.getenv("AGENTKIT_LIBANSWERS_URL")),
                            "smtp": bool(os.getenv("AGENTKIT_SMTP_HOST"))},
-            "index": {"chunks": chat.index.size, "version": chat.index.version, "path": index_path}}
+            "index": {"chunks": chat.index.size, "version": chat.index.version, "path": index_path},
+            "local_models": getattr(getattr(chat.llm, "inner", chat.llm), "status", lambda: [])()
+            if hasattr(getattr(chat.llm, "inner", chat.llm), "endpoints") else []}
 
 
 def security(chat, since: float, until: float, **_):

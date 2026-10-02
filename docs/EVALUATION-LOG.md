@@ -9,6 +9,18 @@ agentkit --index data/index.db eval --set golden    # also: --set dev, --set hel
 agentkit redteam && agentkit test-agents && pytest -q && python scripts/ocr_bench.py
 ```
 
+## Local model pool and README (2026-10-02)
+
+- `AGENTKIT_LLM=local` runs the whole pipeline on self-hosted OpenAI-compatible servers. Several models can run at once with roles (answer, fast, vision), language and agent preferences, priorities and failover (`config/local-models.example.json`).
+- Tests use scripted servers:
+  - routing by role and language (an Arabic question goes to the Arabic server);
+  - failover to the next server, then to search results;
+  - invalid citation numbers dropped;
+  - the critic catches a fabricated number from a local model.
+  - No GPU here, so local answer quality is not measured yet: run the four eval sets on the chosen models first.
+- README rewritten with 19 screenshots (`scripts/screenshots.py`), server tiers from measured numbers (app 80 MB RSS; search p95 40 ms at 20k chunks on 4 vCPU), local-model sizing and a research note on decision models ([plan 8](plans/08-decision-models.md)). Of the decision-model projects suggested to us, open-jev exists but ships untrained weights, and "Cloudflare Clef" could not be found.
+- Tests: 198 passed.
+
 ## Plan 7: dashboard, costs, gaps, citations, critic, semantic cache, theses (2026-10-02)
 
 All five phases of [plan 7](plans/07-analytics-governance-research.md) are built and tested (offline stand-in; no API key here).

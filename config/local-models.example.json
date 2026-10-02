@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy to config/local-models.json and set AGENTKIT_LLM=local. Roles: answer, fast (grading, rewriting, critic), vision (OCR of scans). langs/agents mark preferred servers; lower priority wins; failed servers are skipped. Model choices are starting points to compare with `agentkit eval` on your own hardware [VERIFY licences].",
+  "models": [
+    {"name": "main", "url": "http://gpu1:8000/v1", "model": "Qwen/Qwen2.5-32B-Instruct-AWQ", "roles": ["answer"], "priority": 1},
+    {"name": "arabic", "url": "http://gpu2:8000/v1", "model": "CohereForAI/c4ai-command-r7b-arabic-02-2025", "roles": ["answer"], "langs": ["ar", "arabizi"], "priority": 2},
+    {"name": "fast", "url": "http://gpu2:8001/v1", "model": "Qwen/Qwen2.5-7B-Instruct", "roles": ["fast"], "priority": 1},
+    {"name": "vision", "url": "http://gpu2:8002/v1", "model": "Qwen/Qwen2.5-VL-7B-Instruct", "roles": ["vision"], "priority": 1},
+    {"name": "backup", "url": "http://cpu-host:11434/v1", "model": "qwen2.5:7b", "roles": ["answer", "fast"], "priority": 9}
+  ]
+}

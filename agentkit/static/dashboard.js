@@ -34,7 +34,7 @@
   function bars(title, points, valueFmt = fmt) {
     const fig = el("figure", {class: "chart"}); fig.append(el("h3", {text: title}));
     if (!points.length) { fig.append(el("p", {class: "note", text: "No data in this period."})); return fig; }
-    const W = 640, H = 140, pad = 28, max = Math.max(...points.map((p) => p[1] || 0), 1e-9);
+    const W = 640, H = 140, pad = 28, max = Math.max(...points.map((p) => p[1] || 0), 1e-9);  // nulls skipped below
     const bw = Math.min(36, Math.max(4, (W - pad * 2) / points.length - 8));  // thin marks
     const step = (W - pad * 2) / points.length;
     const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
@@ -42,6 +42,7 @@
     const axis = document.createElementNS(ns, "line");
     Object.entries({x1: pad, x2: W - pad, y1: H, y2: H, class: "axis"}).forEach(([k, v]) => axis.setAttribute(k, v)); svg.append(axis);
     points.forEach(([label, v], i) => {
+      if (v == null) return;  // no data that day: leave the slot empty rather than drawing a zero
       const h = Math.max(1, ((v || 0) / max) * (H - 20)), x = pad + i * step + (step - bw) / 2, y = H - h;
       const r = document.createElementNS(ns, "path");  // 4px rounded data-end, square at the baseline
       const rr = Math.min(4, bw / 2, h);
@@ -49,9 +50,11 @@
       r.setAttribute("class", "bar-mark"); r.setAttribute("tabindex", "0");
       const tip = document.createElementNS(ns, "title"); tip.textContent = `${label}: ${valueFmt(v)}`; r.append(tip);
       svg.append(r);
-      if (points.length <= 12 || i % Math.ceil(points.length / 8) === 0) {
+      const isDate = /^\d{4}-\d{2}-\d{2}$/.test(String(label));
+      if (points.length <= (isDate ? 7 : 12) || i % Math.ceil(points.length / 7) === 0) {
         const t = document.createElementNS(ns, "text"); t.setAttribute("x", x + bw / 2); t.setAttribute("y", H + 16);
-        t.setAttribute("text-anchor", "middle"); const L = String(label); t.textContent = L.length > 14 ? L.slice(0, 13) + "…" : L; svg.append(t);
+        const L = isDate ? String(label).slice(5) : String(label);
+        t.setAttribute("text-anchor", "middle"); t.textContent = L.length > 14 ? L.slice(0, 13) + "…" : L; svg.append(t);
       }
     });
     fig.append(svg);
@@ -177,7 +180,10 @@
         el("h3", {text: "Blocking"}), table(p.blocking.map((x) => ({x})), [["x", "Problem"]]),
         el("h3", {text: "Warnings"}), table(p.warnings.map((x) => ({x})), [["x", "Warning"]]),
         el("h3", {text: "Connectors"}), table(entries(d.connectors).map(([k, v]) => ({k, v})), [["k", "Connector"], ["v", "Configured", (v) => v ? "yes" : "no"]]),
-        el("h3", {text: "Snapshots"}), table(d.snapshots.map((x) => ({x})), [["x", "Snapshot (restore with agentkit rollback)"]])];
+        el("h3", {text: "Snapshots"}), table(d.snapshots.map((x) => ({x})), [["x", "Snapshot (restore with agentkit rollback)"]]),
+        ...(d.local_models && d.local_models.length ? [el("h3", {text: "Local models"}), table(d.local_models,
+          [["name", "Name"], ["model", "Model"], ["roles", "Roles", (v) => v.join(", ")], ["langs", "Languages", (v) => v.join(", ")],
+           ["requests", "Requests"], ["failovers", "Failovers"]], "Local model servers")] : [])];
     },
     security(d) {
       return [tiles([["Rate-limited requests", fmt(d.rate_limited)], ["Quarantined passages", fmt(d.quarantined_chunks)],

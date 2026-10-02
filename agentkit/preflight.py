@@ -34,7 +34,11 @@ def check(index) -> dict:
     if index.size == 0:
         blocking.append("the index is empty")
     blocking += _live_evals(index, os.getenv("AGENTKIT_EVAL_DIR", "data"))
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if os.getenv("AGENTKIT_LLM") == "local":
+        cfg = Path(os.getenv("AGENTKIT_LOCAL_MODELS") or ROOT / "config/local-models.json")
+        if not (cfg.exists() or os.getenv("AGENTKIT_LOCAL_URL")):
+            blocking.append("AGENTKIT_LLM=local but neither config/local-models.json nor AGENTKIT_LOCAL_URL is set")
+    elif not os.getenv("ANTHROPIC_API_KEY"):
         blocking.append("ANTHROPIC_API_KEY is not set: answers would come from the offline extractive stand-in")
     auth = os.getenv("AGENTKIT_AUTH", "none")
     if auth == "none":

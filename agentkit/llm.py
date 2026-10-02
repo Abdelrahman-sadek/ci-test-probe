@@ -343,6 +343,9 @@ class ResilientLLM(LLM):
 
 
 def get_llm() -> LLM:
+    if os.getenv("AGENTKIT_LLM") == "local":  # self-hosted OpenAI-compatible server (vLLM, Ollama, llama.cpp)
+        from .local_llm import LocalLLM
+        return ResilientLLM(LocalLLM())
     has_creds = any(os.getenv(v) for v in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")) or \
         os.getenv("AGENTKIT_LIVE") == "1"  # e.g. credentials from an `ant auth login` profile
     if has_creds and os.getenv("AGENTKIT_FAKE") != "1":
