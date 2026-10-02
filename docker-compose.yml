@@ -21,6 +21,7 @@ services:
     ports: ["80:80", "443:443"]
     environment:
       DOMAIN: ${DOMAIN:-localhost}
+      AGENTKIT_PROXY_SECRET: ${AGENTKIT_PROXY_SECRET:-}
     volumes: ["./deploy/Caddyfile:/etc/caddy/Caddyfile:ro", "caddy-data:/data"]
     depends_on: [app]
   qdrant:

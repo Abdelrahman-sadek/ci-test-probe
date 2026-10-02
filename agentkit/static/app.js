@@ -14,7 +14,7 @@ const STR = {
        pasth: "Past conversations", signin: "Sign in with your AUC account to see this.", scan: "View scanned page",
        degraded: "The AI service is busy, so this answer shows the most relevant passage from library sources.",
        related: "You may also ask about:", referral: "Contact the", privacy: "Privacy: how your questions are handled",
-       download: "Download my data", erase: "Delete my data", confirm: "Delete all your saved chats, searches and feedback?",
+       download: "Download my data", erase: "Delete my data", confirm: "Delete all your saved chats, searches, feedback and help requests?",
        erased: "Your data was deleted."},
   ar: {title: "مساعد مكتبة الجامعة الأمريكية", skip: "انتقل إلى مربع السؤال", label: "سؤالك",
        placeholder: "اسأل عن الاستعارة أو الكتب النادرة أو الرسائل العلمية…", send: "اسأل", voice: "اسأل بالصوت",
@@ -30,7 +30,7 @@ const STR = {
        pasth: "المحادثات السابقة", signin: "سجّل الدخول بحساب الجامعة لعرض هذا.", scan: "عرض الصفحة الممسوحة",
        degraded: "خدمة الذكاء الاصطناعي مشغولة، لذلك تعرض هذه الإجابة أنسب فقرة من مصادر المكتبة.",
        related: "يمكنك أيضًا السؤال عن:", referral: "تواصل مع", privacy: "الخصوصية: كيف نتعامل مع أسئلتك",
-       download: "تنزيل بياناتي", erase: "حذف بياناتي", confirm: "هل تريد حذف كل محادثاتك وعمليات البحث والملاحظات المحفوظة؟",
+       download: "تنزيل بياناتي", erase: "حذف بياناتي", confirm: "هل تريد حذف كل محادثاتك وعمليات البحث والملاحظات وطلبات المساعدة المحفوظة؟",
        erased: "تم حذف بياناتك."},
 };
 const $ = (id) => document.getElementById(id);

@@ -107,6 +107,9 @@ class SqliteIndex(BaseIndex):
         rows = dict(self.db.execute(f"SELECT rowid, data FROM chunks WHERE rowid IN ({marks})", ids).fetchall())  # nosec B608
         return [Chunk(**json.loads(rows[i])) for i in ids]
 
+    def iter_chunks(self):
+        return (Chunk(**json.loads(d)) for (d,) in self.db.execute("SELECT data FROM chunks"))
+
     def manifest(self) -> dict[str, dict]:
         return {o: json.loads(e) for o, e in self.db.execute("SELECT origin, entry FROM manifest")}
 

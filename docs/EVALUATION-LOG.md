@@ -9,6 +9,32 @@ agentkit --index data/index.db eval --set golden    # also: --set dev, --set hel
 agentkit redteam && agentkit test-agents && pytest -q && python scripts/ocr_bench.py
 ```
 
+## Round 2 → round 3 (2026-10-02)
+
+Reviewer verdicts on round 2: **Sonnet: NEEDS WORK**, **Haiku: NEEDS WORK**. Both said the code is strong; the blockers are going live without a live-model eval, unverified content and corpus scope, and spoofable proxy identity. Changes:
+
+| Reviewer item | Priority | Change | Evidence |
+|---|---|---|---|
+| Live-model eval before pilot (both) | P0 | Eval reports record `live` and `index_version`; `agentkit preflight` blocks unless golden ≥ 0.95 and held-out ≥ 0.8 ran live on the current index; `serve` with `AGENTKIT_PILOT=1` refuses to start otherwise | `test_preflight_*` |
+| [VERIFY] facts and 8-page corpus (both) | P0 | Preflight blocks on any indexed [VERIFY] chunk, [VERIFY] in librarians/referrals, and a missing AUC sign-off (`signoff.json`: approver, date, scope, out of scope, verification owner and deadline) | `test_preflight_blocks…` |
+| Proxy headers spoofable (Sonnet) | P0 | `AGENTKIT_PROXY_SECRET`: identity headers count only with the proxy's secret; Caddy strips client copies and adds it; preflight blocks proxy mode without it | `test_proxy_identity…` |
+| Independent pen test, screen-reader users, staff rota, real scans (Sonnet) | P0/P1/P2 | Human launch requirements in PILOT.md with owners and checks; not claimable by code | — |
+| Style/conflict edits could change facts (Sonnet) | P1 | Tests that cleanup keeps every number, URL, negation and citation (EN/AR); conflicts between different audiences (alumni vs. students) keep both | `test_style_cleanup_never_changes_facts`, `test_different_audiences…` |
+| Citation precision (Sonnet) | P1 | New eval check `quoted`: every quote appears verbatim in the chunk it cites | golden 26/26, dev 19/19, held-out 16/16 |
+| Low-confidence scans answered silently (Sonnet) | P1 | Answers citing an uncorrected OCR page below 0.7 confidence carry "scanned page that staff have not checked yet" | `test_unchecked_scan_is_labelled` |
+| Erasure scope (Sonnet) | P1 | Privacy page (EN/AR) states what "Delete my data" removes and that help-desk/email copies follow library retention | — |
+| Staff-facing metrics unclear (Haiku) | P1 | RUNBOOK "What staff see" table | — |
+| Budget per process (Sonnet) | P2 | Documented: one server process per container | — |
+
+Results after the changes (offline stand-in):
+| Set | JSON | SQLite |
+|---|---|---|
+| golden | 40/40, recall 1.0, MRR 1.0 | 40/40, recall 1.0, MRR 1.0 |
+| dev | 20/25, recall 1.0, MRR 0.947 | 20/25, recall 1.0, MRR 0.895 |
+| held-out (round 2 set, now informed by fixes) | 16/20, recall 1.0, MRR 0.969 | 16/20, recall 0.938, MRR 0.938 |
+
+Style check passes on every answer (30/30 golden, 20/20 dev, 17/17 held-out). Tests: 146 passed. `agentkit preflight` in this environment: **9 blocking problems** (no API key, golden and held-out evals offline, [VERIFY] in librarians and referrals, no sign-off, open sign-in, log key, log salt), which is the correct result for a development checkout.
+
 ## Round 1 → round 2 (2026-10-02)
 
 ### Question sets

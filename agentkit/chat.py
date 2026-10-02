@@ -17,6 +17,7 @@ from .arabic import detect_lang, franco_to_arabic, normalize, sentences, stem_ar
 from .cache import AnswerCache
 from .llm import LLM, Grounded
 from .metrics import METRICS
+from .ocr import LOW_CONFIDENCE
 from .rag import BaseIndex, Chunk
 from .security import SecureLog, pseudonym, redact
 
@@ -139,6 +140,12 @@ def referral(question: str) -> dict | None:
 
 
 _NUM = re.compile(r"\b\d+(?:[.:]\d+)?\b")
+_AUDIENCE = re.compile(r"\b(alumn\w*|undergrad\w*|graduate|faculty|staff|visitors?|external|researchers?|"
+                       r"خريج\w*|طلاب|طالب|اعضاء هيئه التدريس|زوار)\b")
+
+
+def _audiences(c: Chunk) -> set[str]:
+    return {m.group(1)[:5] for m in _AUDIENCE.finditer(normalize(f"{c.section} {c.text}"))}
 
 
 def resolve_conflicts(hits: list) -> tuple[list, list[str]]:
@@ -151,6 +158,8 @@ def resolve_conflicts(hits: list) -> tuple[list, list[str]]:
                 continue
             ta, tb = set(a.tokens), set(b.tokens)
             if len(ta & tb) / max(len(ta | tb), 1) < 0.3:
+                continue
+            if _audiences(a) != _audiences(b):  # alumni vs. student rules are not a conflict: keep both
                 continue
             na, nb = set(_NUM.findall(a.text)), set(_NUM.findall(b.text))
             if na and nb and na != nb:
@@ -356,6 +365,9 @@ class LibraryChat:
         cited = [(n, hits[n - 1][1]) for n in grounded.cited if 1 <= n <= len(hits)]
         ans = Answer(style.clean(grounded.text), ctx["agent"], ctx["lang"], "answer" if cited else "handoff", sources=cited,
                      quotes=grounded.quotes, hits=hits, degraded=grounded.degraded, notes=list(ctx.get("notes", [])))
+        if any(c.method.startswith("ocr") and c.confidence < LOW_CONFIDENCE for _, c in cited):
+            ans.notes.append("Part of this answer comes from a scanned page that staff have not checked yet; "
+                             "please confirm it against the scan.")
         if ans.notes:
             ans.text += "\n\n" + " ".join(ans.notes)
         return self._with_actions(ans, ctx.get("question", ""))

@@ -63,8 +63,9 @@ agentkit --index data/index.db ask "ممكن الخريجين يستعيروا �
 agentkit eval --min-pass 0.95 --min-recall 0.9            # 40 golden questions (--set dev | heldout)
 agentkit feedback-report                                  # unanswered + 👎 questions → test-set candidates
 agentkit redteam                                          # 30 attacks (EN/AR/Franco, direct + planted in documents)
+agentkit preflight                                        # go/no-go before real users (live evals, sign-off, security)
 agentkit export-accessible scan.pdf -o scan.html          # OCR → accessible HTML
-pytest -q                                                 # 137 tests incl. a real-browser WCAG check
+pytest -q                                                 # 146 tests incl. a real-browser WCAG check
 ```
 
 ```

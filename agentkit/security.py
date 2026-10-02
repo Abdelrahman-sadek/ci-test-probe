@@ -140,6 +140,13 @@ def verify_jwt(token: str) -> Principal:
     return make_principal(str(claims.get("email") or claims.get("sub", "")), groups)
 
 
+def _proxy_ok(h: dict[str, str]) -> bool:
+    """Identity headers count only with the secret the SSO proxy adds, so a request that bypasses the proxy
+    cannot claim to be someone else. Without AGENTKIT_PROXY_SECRET the network must enforce proxy-only access."""
+    secret = os.getenv("AGENTKIT_PROXY_SECRET", "")
+    return not secret or hmac.compare_digest(h.get("x-proxy-secret", ""), secret)
+
+
 def authenticate(headers: dict[str, str]) -> Principal:
     """Resolve the caller from request headers. Modes (AGENTKIT_AUTH): none | jwt | proxy.
     'proxy' trusts X-Forwarded-User/-Groups set by an SSO reverse proxy (oauth2-proxy, Shibboleth SP) —
@@ -152,7 +159,7 @@ def authenticate(headers: dict[str, str]) -> Principal:
     principal = Principal()
     if mode == "jwt" and h.get("authorization", "").lower().startswith("bearer "):
         principal = verify_jwt(h["authorization"][7:].strip())
-    elif mode == "proxy" and h.get("x-forwarded-user"):
+    elif mode == "proxy" and h.get("x-forwarded-user") and _proxy_ok(h):
         groups = [g.strip() for g in h.get("x-forwarded-groups", "").split(",") if g.strip()]
         principal = make_principal(h["x-forwarded-user"], groups)
     if os.getenv("AGENTKIT_REQUIRE_LOGIN") == "1" and not principal.user:

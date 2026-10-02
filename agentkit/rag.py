@@ -199,6 +199,9 @@ class BaseIndex:
 
     # Storage contract
     def add(self, chunks: list[Chunk]): raise NotImplementedError
+
+    def iter_chunks(self):
+        raise NotImplementedError
     def remove_origin(self, origin: str) -> int: raise NotImplementedError
     def set_flag(self, origin: str, flag: str, on: bool) -> int: raise NotImplementedError
     def get(self, ids: list) -> list[Chunk]: raise NotImplementedError
@@ -285,6 +288,9 @@ class Index(BaseIndex):
     @property
     def version(self) -> str:
         return self._version
+
+    def iter_chunks(self):
+        return iter(self.chunks)
 
     def add(self, chunks: list[Chunk]):
         with self.lock:

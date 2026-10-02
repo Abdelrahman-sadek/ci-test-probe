@@ -14,7 +14,15 @@ A four-week pilot answers one question: does the assistant resolve routine libra
 | Ingest the approved crawl | Systems librarian | `agentkit eval --set golden` ≥ 95 %, `--set heldout` measured and recorded |
 | Set `ANTHROPIC_API_KEY`, `AGENTKIT_DAILY_BUDGET_USD`, SSO, `AGENTKIT_LOG_KEY` | IT | `/healthz` shows `"llm": "ok"` |
 | Fill `librarians.json`, `referrals.json` | Reference staff | each subject has a contact and queue |
-| Privacy notice reviewed (`/privacy`, `docs/DATA-POLICY.md`) | Data protection officer | signed off |
+| Privacy notice and retention reviewed (`/privacy`, `docs/DATA-POLICY.md`) | Data protection officer | signed off |
+| Corpus scope signed (`knowledge/auc-library/signoff.json`: approver, date, in and out of scope, owner and deadline for [VERIFY] items) | Head of reference | `agentkit preflight` passes the sign-off check |
+| Live-model evals: golden ≥ 95 %, held-out ≥ 80 %, 0 fabricated hours, fees or eligibility in 30 librarian-graded answers | Systems librarian + 2 librarians | `agentkit preflight` passes the eval checks |
+| Independent security test of SSO, staff page and WhatsApp webhook | IT security | no open high findings |
+| Screen-reader test with NVDA and VoiceOver, English and Arabic, by real users | Accessibility services | no blocking issues |
+| Handoff coverage: named owner per queue, cover for closed hours and holidays, tested with real subject librarians | Head of reference | rota published |
+| 20–30 real AUC scans with ground truth; compare Claude and Tesseract with `scripts/ocr_bench.py --gt-dir` | RBSCL + systems | CER recorded; pages below 0.7 confidence corrected before indexing |
+
+Gate: with `AGENTKIT_PILOT=1`, `agentkit serve` refuses to start until `agentkit preflight` passes.
 
 ## Metrics (`agentkit pilot-report`, weekly)
 | Metric | Definition | Target |

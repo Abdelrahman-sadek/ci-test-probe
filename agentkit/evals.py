@@ -53,6 +53,10 @@ def run_golden(chat: LibraryChat, path: Path = GOLDEN) -> dict:
             checks["facts"] = all(normalize(f) in normalize(ans.text) for f in facts)
         if ans.mode in ("answer", "strategy"):
             checks["style"] = not style.findings(ans.text)
+        if ans.quotes:  # citation precision: every quote must appear verbatim in the chunk it cites
+            cited = dict(ans.sources)
+            checks["quoted"] = all(n in cited and normalize(q) in normalize(cited[n].text)
+                                   for n, qs in ans.quotes.items() for q in qs)
         if chat.llm.live and row["expect"] == "answer" and ans.quotes:
             quotes = "\n".join(q for qs in ans.quotes.values() for q in qs)
             verdict = chat.llm.complete("You check a library chatbot for faithfulness. Reply PASS if every claim in "
@@ -71,7 +75,8 @@ def run_golden(chat: LibraryChat, path: Path = GOLDEN) -> dict:
     return {"passed": sum(r["pass"] for r in results), "total": n,
             "pass_rate": round(sum(r["pass"] for r in results) / max(n, 1), 3),
             "recall_at_k": round(recalled / max(with_gold, 1), 3), "mrr": round(sum(rr) / max(len(rr), 1), 3),
-            "k": chat.k, "by_lang": {k: f"{p}/{t}" for k, (p, t) in by_lang.items()}, "results": results}
+            "k": chat.k, "by_lang": {k: f"{p}/{t}" for k, (p, t) in by_lang.items()},
+            "live": bool(chat.llm.live), "index_version": chat.index.version, "results": results}
 
 
 def run_smoke(llm: LLM, path: Path = ROOT / "evals/agents/smoke.json") -> dict:

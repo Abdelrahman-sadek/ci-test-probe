@@ -99,6 +99,7 @@ def _main(argv=None):
     s = sub.add_parser("export-searchable", help="add an invisible OCR text layer to a scanned PDF")
     s.add_argument("path")
     s.add_argument("-o", "--output", required=True)
+    sub.add_parser("preflight", help="go/no-go checks before real users (exit 1 when anything blocks)")
     sub.add_parser("pilot-report", help="pilot metrics: deflection, handoffs, satisfaction, SLA")
     sub.add_parser("review", help="list sources waiting for approval")
     s = sub.add_parser("approve", help="release sources held for review")
@@ -244,10 +245,24 @@ def _main(argv=None):
         print(f"{rep['passed']}/{rep['total']} agents passed → {a.out}" +
               (f"  missing tests: {rep['missing']}" if rep["missing"] else ""))
         return 0 if rep["passed"] == rep["total"] and not rep["missing"] else 1
+    elif a.cmd == "preflight":
+        from .preflight import check
+        res = check(open_index(a.index))
+        for b in res["blocking"]:
+            print(f"✗ {b}")
+        for w in res["warnings"]:
+            print(f"! {w}")
+        print("✓ ready for real users" if res["ok"] else f"{len(res['blocking'])} blocking problem(s)")
+        return 0 if res["ok"] else 1
     elif a.cmd == "serve":
         from .api import serve
         from .jobs import JobQueue
         chat = make_chat(a.index, llm)
+        if os.getenv("AGENTKIT_PILOT") == "1":  # real users: refuse to start until preflight passes
+            from .preflight import check
+            res = check(chat.index)
+            if not res["ok"]:
+                raise SetupError("preflight failed (AGENTKIT_PILOT=1):\n- " + "\n- ".join(res["blocking"]))
         jobs = None if a.no_jobs else JobQueue(chat.index, llm, a.index)
         serve(chat, a.host, a.port, jobs)
     elif a.cmd == "redteam":

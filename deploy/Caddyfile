@@ -6,11 +6,24 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
-	@admin path /admin* /metrics
-	# Restrict staff routes to the campus network (replace with AUC ranges) [VERIFY]
-	# @outside not remote_ip 10.0.0.0/8
+	# Staff routes only from the campus network (replace with AUC ranges) [VERIFY]
+	# @staff_outside {
+	# 	path /admin* /metrics
+	# 	not remote_ip 10.0.0.0/8
+	# }
+	# respond @staff_outside 403
 	request_body {
 		max_size 30MB
 	}
-	reverse_proxy app:8000
+	# Identity headers come only from the SSO step: drop any a client sends (request_header runs before
+	# forward_auth), then add the secret the app checks (AGENTKIT_PROXY_SECRET).
+	request_header -X-Forwarded-User
+	request_header -X-Forwarded-Groups
+	# forward_auth oauth2-proxy:4180 {
+	# 	uri /oauth2/auth
+	# 	copy_headers X-Auth-Request-Email>X-Forwarded-User X-Auth-Request-Groups>X-Forwarded-Groups
+	# }
+	reverse_proxy app:8000 {
+		header_up X-Proxy-Secret {$AGENTKIT_PROXY_SECRET}
+	}
 }

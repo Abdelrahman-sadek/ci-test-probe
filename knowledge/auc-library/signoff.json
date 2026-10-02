@@ -1,0 +1,23 @@
+{
+  "_comment": "AUC Libraries fills this in before a pilot; `agentkit preflight` blocks until approved_by and date are set. Scope lists what the assistant may answer; anything else is handed to a librarian.",
+  "approved_by": "",
+  "role": "",
+  "date": "",
+  "scope": [
+    "Borrowing and renewals (loan periods and limits by patron type)",
+    "Main Library hours (live from LibCal; never stored)",
+    "Rare Books and Special Collections Library: location, visits, external researchers",
+    "RBSCL collection strengths and digital library",
+    "Research help: subject librarians and consultations",
+    "AUC Knowledge Fountain: theses, dissertations, capstones",
+    "Social Research Center Library: hours and use"
+  ],
+  "out_of_scope": [
+    "Fines and fees amounts",
+    "Interlibrary loan and document delivery",
+    "Database-by-database access rules",
+    "Course registration, IT, finance (referred to campus offices)"
+  ],
+  "verify_owner": "",
+  "verify_deadline": ""
+}
