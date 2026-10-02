@@ -1,10 +1,4 @@
-<div align="center"><p align="center"><img src="docs/screenshots/architecture.png" alt="Architecture: request path from user through Caddy, guardrails, routing, semantic cache, hybrid search, grading, the model and the evaluator-critic; ingestion pipeline into the index; AppDB feeding the staff dashboard" width="760"></p>
-
-<details><summary>Diagram source (Mermaid; renders on github.com)</summary>
-
-
-
-</details>
+<div align="center">
 
 # AUC Library Assistant & Agent Kit
 
@@ -141,31 +135,37 @@ More: [tickets](docs/screenshots/dashboard-tickets.png) · [evaluations](docs/sc
 
 ## Architecture
 
+<p align="center"><img src="docs/screenshots/architecture.png" alt="Architecture: request path from user through Caddy, guardrails, routing, semantic cache, hybrid search, grading, the model and the evaluator-critic; ingestion pipeline into the index; AppDB feeding the staff dashboard" width="760"></p>
+
+<details><summary>Diagram source (Mermaid; renders on github.com)</summary>
+
 ```mermaid
-flowchart LR
-  U[Student / staff<br/>web · widget · WhatsApp] --> C[Caddy HTTPS<br/>SSO headers + secret]
-  C --> A[FastAPI app]
-  A --> G{Guardrails}
-  G -- refuse --> U
-  G --> R[Route to AUC agent]
-  R --> S[Semantic cache]
-  S -- miss --> X[Expand: glossary · Franco→Arabic]
-  X --> H[Hybrid search<br/>BM25 + trigrams + RRF<br/>± BGE-M3 · reranker<br/>filters: access · dates · thesis metadata]
-  H --> Q[Grade · rewrite · retry]
-  Q --> L[LLM: Claude native citations<br/>or local pool, cited n]
-  L --> K[Evaluator-critic]
+flowchart TB
+  U["Student or staff<br>web, widget, WhatsApp"] --> C["Caddy HTTPS<br>SSO headers + secret"]
+  C --> A["FastAPI app"]
+  A --> G{"Guardrails"}
+  G -- "refuse" --> U
+  G --> R["Route to AUC agent"]
+  R --> S["Semantic cache"]
+  S -- "miss" --> X["Expand<br>glossary, Franco to Arabic"]
+  X --> H["Hybrid search<br>BM25 + trigrams + RRF<br>optional BGE-M3 and reranker<br>filters: access, dates, thesis metadata"]
+  H --> Q["Grade, rewrite, retry"]
+  Q --> L["LLM<br>Claude with native citations<br>or local model pool"]
+  L --> K["Evaluator-critic"]
   K --> U
-  Q -- no match --> T[Handoff ticket<br/>LibAnswers · email · queue]
-  A --> D[(AppDB: answers · usage ·<br/>tickets · feedback · audit)]
-  D --> DB[Staff dashboard]
-  subgraph Ingestion
-    F[Pages · PDFs · scans · EAD · OAI-PMH theses] --> P[Sandboxed parse + OCR<br/>layout · confidence]
-    P --> N[Arabic fix · chunks · quarantine · provenance]
-    N --> I[(Index: SQLite FTS5 / JSON<br/>± Qdrant)]
+  Q -- "no match" --> T["Handoff ticket<br>LibAnswers, email, queue"]
+  A --> D[("AppDB<br>answers, usage, tickets,<br>feedback, audit")]
+  D --> DB["Staff dashboard"]
+  subgraph ING["Ingestion"]
+    F["Pages, PDFs, scans,<br>EAD, OAI-PMH theses"] --> P["Sandboxed parse + OCR<br>layout, confidence"]
+    P --> N["Arabic fix, chunks,<br>quarantine, provenance"]
+    N --> I[("Index<br>SQLite FTS5 or JSON<br>optional Qdrant")]
   end
   I --> H
-  LC[LibCal · Primo · Alma] -. live, never indexed .-> H
+  LC["LibCal, Primo, Alma"] -. "live, never indexed" .-> H
 ```
+
+</details>
 
 | Layer | Technology |
 |---|---|
