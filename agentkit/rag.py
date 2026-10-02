@@ -23,7 +23,7 @@ from pathlib import Path
 
 from .arabic import detect_lang, normalize, sentences, tokenize, words
 from .llm import LLM
-from .ocr import extract, safe_extract
+from .ocr import LOW_CONFIDENCE, extract, safe_extract
 
 MAX_WORDS, OVERLAP_WORDS, RRF_K = 160, 30, 60
 BLOCKING_FLAGS = {"injection", "unreviewed"}  # chunks with these flags are never retrieved
@@ -53,6 +53,13 @@ class Chunk:
     context: str = ""  # contextual-retrieval prefix written by the LLM (optional)
     tokens: list[str] = field(default_factory=list, repr=False)
     origin: str = ""   # the ingested file this chunk came from (provenance)
+    confidence: float = 1.0  # extraction/OCR confidence of the page
+    valid_from: str = ""     # ISO date: not shown before this (e.g. Ramadan hours)
+    valid_to: str = ""       # ISO date: hidden after this (expired policy or notice)
+    priority: str = ""       # "urgent" → pinned above other results when relevant
+
+    def current(self, today: str) -> bool:
+        return (not self.valid_from or self.valid_from <= today) and (not self.valid_to or today <= self.valid_to)
 
     @property
     def indexed_text(self) -> str:
@@ -110,6 +117,11 @@ def chunk_document(path: Path, llm: LLM, safe: bool = True) -> tuple[list[Chunk]
     """Return the chunks of one file and, per chunk id, the page text it came from (for contextualising)."""
     chunks, bodies = [], {}
     pages = safe_extract(path, llm) if safe else extract(path, llm)
+    fixes_file = path.with_name(path.name + ".corrections.json")  # staff-corrected page text wins over OCR
+    if fixes_file.exists():
+        from .ocr import Page
+        fixes = {int(k): v for k, v in json.loads(fixes_file.read_text(encoding="utf-8")).items()}
+        pages = [Page(fixes[pg.page], pg.page, "corrected", 1.0) if pg.page in fixes else pg for pg in pages]
     sidecar = path.with_name(path.name + ".meta.json")  # title/url/access for PDFs and images
     side = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.exists() else {}
     for page in pages:
@@ -126,11 +138,14 @@ def chunk_document(path: Path, llm: LLM, safe: bool = True) -> tuple[list[Chunk]
                 cid = hashlib.sha1(f"{source}|{page.page}|{text}".encode(), usedforsecurity=False).hexdigest()[:12]
                 flags = ["injection"] if INJECTION.search(normalize(win)) else []
                 c = Chunk(cid, text, title, section, source, page.page, detect_lang(win), page.method,
-                          meta.get("updated", ""), meta.get("access", "public"), flags, origin=str(path))
+                          meta.get("updated", ""), meta.get("access", "public"), flags, origin=str(path),
+                          confidence=page.confidence, valid_from=meta.get("valid_from", ""),
+                          valid_to=meta.get("valid_to", ""), priority=meta.get("priority", ""))
                 chunks.append(c)
                 bodies[cid] = body
     for c in chunks:
         c.tokens = tokenize(c.indexed_text)
+    chunk_document.low_pages = sorted({(pg.page, pg.confidence) for pg in pages if pg.confidence < LOW_CONFIDENCE})
     return chunks, bodies
 
 
@@ -209,14 +224,18 @@ class BaseIndex:
     def search(self, query: str, k: int = 5, expansions: list[str] | None = None,
                access: tuple[str, ...] = ("public",), pool: int = 50) -> list[tuple[float, Chunk]]:
         """Hybrid search over chunks the caller may see (OWASP LLM08); quarantined chunks never surface."""
+        import datetime
         q = " ".join([query, *(expansions or [])])
+        today = datetime.date.today().isoformat()
         with self.lock:
             rankings = [self._rank_bm25(q, access, pool), self._rank_chargram(q, access, pool)]
             if self.embedder:
                 rankings.append(self._rank_dense(q, access, pool))
             fused = rrf([r for r in rankings if r])
-            top = sorted(fused, key=lambda i: -fused[i])[: max(k, 20) if self.reranker else k]
-            chunks = dict(zip(top, self.get(top)))
+            ranked = sorted(fused, key=lambda i: -fused[i])[: max(k, 20) * 2]
+            chunks = dict(zip(ranked, self.get(ranked)))
+            # effective dates: expired or not-yet-valid content never surfaces
+            top = [i for i in ranked if chunks[i].current(today)][: max(k, 20) if self.reranker else k]
         if self.reranker and top:
             rs = self.reranker.scores(query, [chunks[i].indexed_text for i in top])
             order = sorted(range(len(top)), key=lambda j: -rs[j])
@@ -388,11 +407,13 @@ def ingest(paths: list[str | Path], llm: LLM, index: BaseIndex | None = None, co
     index = index if index is not None else Index()
     report, staged = [], []
     files = [f for p in map(Path, paths) for f in (sorted(p.rglob("*")) if p.is_dir() else [p])
-             if f.is_file() and not f.name.startswith((".", "README")) and not f.name.endswith(".meta.json")]
+             if f.is_file() and not f.name.startswith((".", "README"))
+             and not f.name.endswith((".meta.json", ".corrections.json"))]
     known = index.manifest()
     for f in files:
         origin = str(f)
-        row = {"source": origin, "chunks": 0, "methods": [], "quarantined": 0, "status": "", "error": ""}
+        row = {"source": origin, "chunks": 0, "methods": [], "quarantined": 0, "status": "", "error": "",
+               "low_confidence_pages": []}
         report.append(row)
         try:
             sha = _sha256(f)
@@ -408,15 +429,17 @@ def ingest(paths: list[str | Path], llm: LLM, index: BaseIndex | None = None, co
             if held:
                 for c in chunks:
                     c.flags.append("unreviewed")
+            low = [{"page": pg, "confidence": conf} for pg, conf in getattr(chunk_document, "low_pages", [])]
+            row["low_confidence_pages"] = low
             row.update(chunks=len(chunks), methods=sorted({c.method for c in chunks}),
                        quarantined=sum("injection" in c.flags for c in chunks),
                        status="pending-review" if held else ("updated" if prev else "new"))
             staged.append((origin, sha, chunks, bodies, "pending" if held else "approved",
-                           chunks[0].source if chunks else ""))
+                           chunks[0].source if chunks else "", low))
         except ValueError as e:  # includes ocr.ParseError
             row["error"] = str(e)
     if contextualize and llm.live:
-        pairs = [(bodies[c.id], c) for _, _, chunks, bodies, _, _ in staged for c in chunks if not c.context]
+        pairs = [(bodies[c.id], c) for _, _, chunks, bodies, *_ in staged for c in chunks if not c.context]
         if contextualize == "batch":
             contexts = llm.contextualize_batch([(doc, c.text) for doc, c in pairs])
         else:
@@ -424,11 +447,12 @@ def ingest(paths: list[str | Path], llm: LLM, index: BaseIndex | None = None, co
         for (_, c), ctx in zip(pairs, contexts):
             c.context = ctx
             c.tokens = tokenize(c.indexed_text)
-    for origin, sha, chunks, _, status, url in staged:
+    for origin, sha, chunks, _, status, url, low in staged:
         with index.lock:
             index.remove_origin(origin)
             index.add(chunks)
-            index.manifest_set(origin, {"sha256": sha, "status": status, "url": url, "chunks": len(chunks)})
+            index.manifest_set(origin, {"sha256": sha, "status": status, "url": url, "chunks": len(chunks),
+                                        "low_confidence_pages": low})
     return index, report
 
 

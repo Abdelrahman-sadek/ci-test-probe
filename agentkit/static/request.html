@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Request rare materials — AUC Library Assistant</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<a class="skip" href="#type-reading">Skip to the form</a>
+<header class="bar"><h1>Request rare books and archives</h1></header>
+<main id="main">
+  <p class="note">Rare Books and Special Collections Library (RBSCL). Staff will confirm availability, handling rules and any fees. <span lang="ar" dir="rtl">مكتبة الكتب النادرة والمجموعات الخاصة.</span></p>
+  <form id="rq" class="panel">
+    <fieldset>
+      <legend>Type of request</legend>
+      <div class="row"><input type="radio" id="type-reading" name="type" value="reading-room" checked><label for="type-reading">Reading-room visit</label></div>
+      <div class="row"><input type="radio" id="type-repro" name="type" value="reproduction"><label for="type-repro">Reproduction (scan or photo)</label></div>
+    </fieldset>
+    <label for="collection">Collection or item title (from the finding aid or catalog)</label>
+    <input id="collection" required maxlength="300">
+    <label for="items">Boxes, folders or pages (optional)</label>
+    <input id="items" maxlength="1000">
+    <label for="visit">Preferred visit date (optional)</label>
+    <input id="visit" type="date">
+    <label for="purpose">Purpose of research (optional)</label>
+    <textarea id="purpose" rows="3" maxlength="1000"></textarea>
+    <label for="aff">Affiliation</label>
+    <select id="aff"><option value="student">AUC student</option><option value="faculty">AUC faculty</option><option value="staff">AUC staff</option><option value="alumni">Alumni</option><option value="external">External researcher</option></select>
+    <label for="name">Name</label>
+    <input id="name" required maxlength="100" autocomplete="name">
+    <label for="email">Email</label>
+    <input id="email" type="email" required maxlength="200" autocomplete="email">
+    <div class="row"><input type="checkbox" id="consent" required><label for="consent">Library staff may contact me about this request.</label></div>
+    <p class="note" id="rights">Permission to publish images is separate from access and may need written approval. External visitors must bring a passport or government photo ID.</p>
+    <p class="row"><button type="submit">Send request</button></p>
+  </form>
+  <p id="status" role="status" aria-live="polite"></p>
+</main>
+<script src="/static/request.js"></script>
+</body>
+</html>

@@ -18,11 +18,11 @@ class JobQueue:
         self.q: queue.Queue = queue.Queue()
         threading.Thread(target=self._worker, daemon=True, name="agentkit-ingest").start()
 
-    def submit(self, paths: list[str], review: bool | None = None) -> str:
+    def submit(self, paths: list[str], review: bool | None = None, force: bool = False) -> str:
         jid = uuid.uuid4().hex[:12]
         self.jobs[jid] = {"id": jid, "status": "queued", "paths": [str(p) for p in paths], "report": [],
                           "created": time.time()}
-        self.q.put((jid, paths, self.review if review is None else review))
+        self.q.put((jid, paths, self.review if review is None else review, force))
         return jid
 
     def get(self, jid: str) -> dict | None:
@@ -36,11 +36,12 @@ class JobQueue:
 
     def _worker(self):
         while True:
-            jid, paths, review = self.q.get()
+            jid, paths, review, force = self.q.get()
             job = self.jobs[jid]
             job["status"] = "running"
             try:
-                _, report = ingest(paths, self.llm, self.index, contextualize=self.contextualize, review=review)
+                _, report = ingest(paths, self.llm, self.index, contextualize=self.contextualize, review=review,
+                                   force=force)
                 self.index.save(self.save_path)
                 job.update(status="done", report=report)
             except Exception as e:  # noqa: BLE001 — surface any failure in the job record

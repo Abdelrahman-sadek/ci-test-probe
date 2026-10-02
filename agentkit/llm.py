@@ -27,7 +27,9 @@ CONTEXT_PROMPT = ("Here is the chunk we want to situate within the whole documen
                   "nothing else.")
 OCR_PROMPT = ("Transcribe ALL text in this scanned page exactly, in reading order. Keep Arabic in Arabic script and "
               "English in English; preserve headings, lists and tables (tables as Markdown). Write unreadable spans "
-              "as [illegible]. Output only the transcription, no commentary.")
+              "as [illegible]. Transcribe handwritten notes and margin annotations where they appear as "
+              "[handwritten: …]. Output only the transcription, then a final line 'CONFIDENCE: high', "
+              "'CONFIDENCE: medium' or 'CONFIDENCE: low' for how legible the page was.")
 
 
 @dataclass
@@ -189,6 +191,9 @@ class FakeLLM(LLM):
         self.calls.append((system, question))
         q = set(tokenize(question))
         cands = [(i, sent, set(tokenize(sent))) for i, src in enumerate(sources, 1) for sent in src["blocks"][1:]]
+        pri = [c for c in cands if sources[c[0] - 1].get("priority") and q & c[2]]
+        if pri:  # mirror the live rule: notices and live data win over stored pages
+            cands = pri
         df = Counter(t for _, _, toks in cands for t in toks)  # rare terms ("outside", "subject") weigh more
         best = None
         for i, sent, toks in cands:

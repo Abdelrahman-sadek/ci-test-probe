@@ -54,12 +54,82 @@ class ApproveIn(BaseModel):
     origin: str | None = None
 
 
+class AskConvIn(AskIn):
+    conversation_id: str | None = Field(default=None, max_length=40)
+
+
+class FeedbackIn(BaseModel):
+    answer_id: str = Field(max_length=40)
+    rating: int = Field(ge=-1, le=1)
+    reason: str = Field(default="", max_length=500)
+    question: str = Field(default="", max_length=1000)
+    mode: str = Field(default="", max_length=20)
+    lang: str = Field(default="", max_length=10)
+
+
+class SaveIn(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    answer: str = Field(default="", max_length=4000)
+
+
+class HandoffIn(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    history: list[Turn] = Field(default_factory=list, max_length=12)
+    email: str = Field(default="", max_length=200, pattern=r"^$|^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    name: str = Field(default="", max_length=100)
+    consent: bool = False
+
+
+class RareRequestIn(BaseModel):
+    request_type: str = Field(pattern=r"^(reading-room|reproduction)$")
+    collection: str = Field(min_length=1, max_length=300)
+    items: str = Field(default="", max_length=1000)
+    visit_date: str = Field(default="", max_length=10, pattern=r"^$|^\d{4}-\d{2}-\d{2}$")
+    purpose: str = Field(default="", max_length=1000)
+    affiliation: str = Field(default="", pattern=r"^$|^(student|faculty|staff|alumni|external)$")
+    name: str = Field(min_length=1, max_length=100)
+    email: str = Field(max_length=200, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    consent: bool
+
+
+class NoticeIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=2000)
+    url: str = Field(default="", max_length=500)
+    valid_from: str = Field(default="", pattern=r"^$|^\d{4}-\d{2}-\d{2}$")
+    valid_to: str = Field(default="", pattern=r"^$|^\d{4}-\d{2}-\d{2}$")
+    priority: str = Field(default="urgent", pattern=r"^(urgent|normal)$")
+    lang: str = Field(default="en", pattern=r"^(en|ar)$")
+
+
+class CorrectionIn(BaseModel):
+    origin: str = Field(max_length=500)
+    page: int = Field(ge=1, le=10000)
+    text: str = Field(min_length=1, max_length=50000)
+
+
+class StatusIn(BaseModel):
+    status: str = Field(pattern=r"^(queued|sent|in-progress|answered|closed)$")
+
+
+class RenewIn(BaseModel):
+    loan_id: str = Field(max_length=60)
+
+
+RIGHTS_NOTICE = ("Permission to reproduce or publish images from special collections is separate from access "
+                 "and may require written approval and fees; staff will confirm rights for each item.")
+
+
 def _origins() -> list[str]:
     return [o.strip() for o in os.getenv("AGENTKIT_EMBED_ORIGINS", "").split(",") if o.strip()]
 
 
-def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/uploads") -> FastAPI:
+def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/uploads", handoff=None) -> FastAPI:
     app = FastAPI(title="AUC Library Assistant", docs_url=None, redoc_url=None, openapi_url=None)
+    appdb = chat.appdb
+    if handoff is None and appdb is not None:
+        from .services import Handoff
+        handoff = Handoff(appdb, chat.libcal)
     limiter = RateLimiter(os.getenv("AGENTKIT_RATE", "30/min"))
     wa_sender = WhatsAppSender()
     uploads = Path(uploads_dir)
@@ -111,6 +181,10 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
     def admin_page():  # the page is static; every admin API call is authorised separately
         return FileResponse(STATIC / "admin.html", media_type="text/html")
 
+    @app.get("/request", response_class=HTMLResponse)
+    def request_page():
+        return FileResponse(STATIC / "request.html", media_type="text/html")
+
     @app.get("/widget.js")
     def widget():
         return FileResponse(STATIC / "widget.js", media_type="text/javascript")
@@ -131,13 +205,113 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
     def agents():
         return [{"name": a.name, "division": a.division, "description": a.description} for a in load_all().values()]
 
+    def need(store):
+        if store is None:
+            raise HTTPException(503, "this feature is not enabled")
+        return store
+
+    def signed_in(who: Principal):
+        if not who.user:
+            raise HTTPException(401, "sign in to use this feature")
+        return who.user
+
+    @app.get("/api/me")
+    def me(who: Principal = Depends(principal)):
+        return {"signed_in": bool(who.user), "admin": who.admin, "access": list(who.access),
+                "features": {"history": appdb is not None, "account": chat.account is not None,
+                             "handoff": handoff is not None}}
+
     @app.post("/api/ask")
-    def ask(body: AskIn, who: Principal = Depends(rate_limited)):
+    def ask(body: AskConvIn, who: Principal = Depends(rate_limited)):
         hist = [t.model_dump() for t in body.history]
-        return chat.ask(body.question, hist, access=who.access, user=who.user).to_dict()
+        ans = chat.ask(body.question, hist, access=who.access, user=who.user).to_dict()
+        if who.user and appdb is not None and ans["mode"] != "account":  # history only for signed-in users
+            try:
+                cid = appdb.add_turn(who.user, body.conversation_id, "user", body.question)
+                appdb.add_turn(who.user, cid, "assistant", ans["answer"])
+                ans["conversation_id"] = cid
+            except PermissionError as e:
+                raise HTTPException(403, str(e)) from e
+        return ans
+
+    @app.post("/api/feedback")
+    def feedback(body: FeedbackIn, who: Principal = Depends(rate_limited)):
+        fid = need(appdb).add_feedback(body.answer_id, body.rating, body.reason, body.question, body.mode,
+                                       body.lang, who.user)
+        return {"ok": True, "id": fid}
+
+    @app.get("/api/conversations")
+    def conversations(who: Principal = Depends(principal)):
+        return need(appdb).conversations(signed_in(who))
+
+    @app.get("/api/conversations/{cid}")
+    def conversation(cid: str, who: Principal = Depends(principal)):
+        return need(appdb).conversation(signed_in(who), cid)
+
+    @app.get("/api/saved")
+    def saved(who: Principal = Depends(principal)):
+        return need(appdb).saved(signed_in(who))
+
+    @app.post("/api/saved")
+    def save(body: SaveIn, who: Principal = Depends(rate_limited)):
+        return {"id": need(appdb).save_search(signed_in(who), body.question, body.answer)}
+
+    @app.delete("/api/saved/{sid}")
+    def unsave(sid: str, who: Principal = Depends(principal)):
+        return {"deleted": need(appdb).delete_saved(signed_in(who), sid)}
+
+    @app.post("/api/handoff")
+    def create_handoff(body: HandoffIn, who: Principal = Depends(rate_limited)):
+        try:
+            return need(handoff).create("question", body.question, [t.model_dump() for t in body.history],
+                                        body.email, body.name, body.consent, user=who.user)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+
+    @app.post("/api/requests/special-collections")
+    def rare_request(body: RareRequestIn, who: Principal = Depends(rate_limited)):
+        if not body.consent:
+            raise HTTPException(422, "consent is required so staff can contact you")
+        extra = body.model_dump(exclude={"name", "email", "consent"})
+        res = need(handoff).create(f"rbscl-{body.request_type}", f"{body.request_type}: {body.collection}",
+                                   [], body.email, body.name, True, extra={**extra, "rights_notice": RIGHTS_NOTICE},
+                                   user=who.user)
+        return {**res, "rights_notice": RIGHTS_NOTICE}
+
+    @app.post("/api/account/renew")
+    def renew(body: RenewIn, who: Principal = Depends(rate_limited)):
+        if chat.account is None:
+            raise HTTPException(503, "account connector not configured")
+        try:
+            return chat.account.renew(signed_in(who), body.loan_id)
+        except PermissionError as e:
+            raise HTTPException(403, str(e)) from e
+
+    @app.get("/api/page-image")
+    def page_image(origin: str, page: int, who: Principal = Depends(principal)):
+        """PNG of a cited PDF page, so readers can check OCR-derived text against the scan. Only for indexed
+        sources the caller may see — never an arbitrary path."""
+        import pymupdf
+        if origin not in chat.index.manifest() or not origin.lower().endswith(".pdf") or not Path(origin).exists():
+            raise HTTPException(404)
+        if not any(c.page == page and c.access in who.access and not c.blocked for c in _chunks_of(origin)):
+            raise HTTPException(404)  # same visibility rules as search (OWASP LLM08)
+        with pymupdf.open(origin) as doc:
+            if not 1 <= page <= doc.page_count:
+                raise HTTPException(404)
+            png = doc[page - 1].get_pixmap(dpi=110).tobytes("png")
+        from fastapi.responses import Response
+        return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+    def _chunks_of(origin: str):
+        idx = chat.index
+        if hasattr(idx, "chunks"):
+            return [c for c in idx.chunks if c.origin == origin]
+        rows = idx.db.execute("SELECT rowid FROM chunks WHERE origin=?", (origin,)).fetchall()
+        return idx.get([r[0] for r in rows])
 
     @app.post("/api/ask/stream")
-    def ask_stream(body: AskIn, who: Principal = Depends(rate_limited)):
+    def ask_stream(body: AskConvIn, who: Principal = Depends(rate_limited)):
         hist = [t.model_dump() for t in body.history]
 
         def events():
@@ -145,7 +319,15 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
                 if kind == "delta":
                     yield f"data: {json.dumps({'delta': data}, ensure_ascii=False)}\n\n"
                 else:
-                    yield f"event: done\ndata: {json.dumps(data.to_dict(), ensure_ascii=False)}\n\n"
+                    out = data.to_dict()
+                    if who.user and appdb is not None and out["mode"] != "account":
+                        try:
+                            cid = appdb.add_turn(who.user, body.conversation_id, "user", body.question)
+                            appdb.add_turn(who.user, cid, "assistant", out["answer"])
+                            out["conversation_id"] = cid
+                        except PermissionError:
+                            pass
+                    yield f"event: done\ndata: {json.dumps(out, ensure_ascii=False)}\n\n"
         return StreamingResponse(events(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
@@ -192,6 +374,53 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
         if jobs is None or not (j := jobs.get(jid)):
             raise HTTPException(404)
         return j
+
+    @app.get("/admin/api/feedback")
+    def feedback_report(_: Principal = Depends(admin)):
+        return need(appdb).feedback_report()
+
+    @app.get("/admin/api/eval-candidates")
+    def eval_candidates(_: Principal = Depends(admin)):
+        return need(appdb).eval_candidates()
+
+    @app.get("/admin/api/notices")
+    def list_notices(_: Principal = Depends(admin)):
+        return need(appdb).notices(include_expired=True)
+
+    @app.post("/admin/api/notices")
+    def add_notice(body: NoticeIn, _: Principal = Depends(admin)):
+        return {"id": need(appdb).add_notice(**body.model_dump())}
+
+    @app.delete("/admin/api/notices/{nid}")
+    def delete_notice(nid: str, _: Principal = Depends(admin)):
+        return {"deleted": need(appdb).delete_notice(nid)}
+
+    @app.get("/admin/api/tickets")
+    def tickets(kind: str | None = None, _: Principal = Depends(admin)):
+        return need(appdb).tickets(kind)
+
+    @app.post("/admin/api/tickets/{tid}")
+    def ticket_status(tid: str, body: StatusIn, _: Principal = Depends(admin)):
+        return {"updated": need(appdb).set_ticket_status(tid, body.status)}
+
+    @app.get("/admin/api/corrections")
+    def corrections(_: Principal = Depends(admin)):
+        out = []
+        for origin, entry in chat.index.manifest().items():
+            for low in entry.get("low_confidence_pages", []):
+                text = "\n".join(c.text.partition("\n")[2] for c in _chunks_of(origin) if c.page == low["page"])
+                out.append({"origin": origin, "page": low["page"], "confidence": low["confidence"], "text": text})
+        return out
+
+    @app.post("/admin/api/corrections")
+    def correct(body: CorrectionIn, _: Principal = Depends(admin)):
+        if body.origin not in chat.index.manifest() or jobs is None:
+            raise HTTPException(404, "unknown source or jobs disabled")
+        side = Path(body.origin + ".corrections.json")
+        fixes = json.loads(side.read_text(encoding="utf-8")) if side.exists() else {}
+        fixes[str(body.page)] = body.text
+        side.write_text(json.dumps(fixes, ensure_ascii=False), encoding="utf-8")
+        return {"job": jobs.submit([body.origin], review=False, force=True)}
 
     @app.get("/admin/api/review")
     def review(_: Principal = Depends(admin)):

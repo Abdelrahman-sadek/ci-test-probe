@@ -62,9 +62,13 @@ load_index = open_index
 
 
 def make_chat(index_path: str = DEFAULT_INDEX, llm=None) -> LibraryChat:
+    from .appdb import AppDB
+    from .connectors import AlmaAccount, LibCal
     cache = None if os.getenv("AGENTKIT_CACHE") == "0" else AnswerCache()
+    appdb = None if os.getenv("AGENTKIT_APP_DB") == "off" else AppDB()
     return LibraryChat(open_index(index_path), llm or get_llm(), catalog=PrimoCatalog.from_env(),
-                       log_path=os.getenv("AGENTKIT_LOG") or None, cache=cache)
+                       log_path=os.getenv("AGENTKIT_LOG") or None, cache=cache, appdb=appdb,
+                       libcal=LibCal.from_env(), account=AlmaAccount.from_env())
 
 
 def main(argv=None):
@@ -94,6 +98,8 @@ def _main(argv=None):
     s = sub.add_parser("export-accessible", help="export a document (OCR if needed) as accessible HTML")
     s.add_argument("path")
     s.add_argument("-o", "--output", required=True)
+    s = sub.add_parser("feedback-report", help="unanswered + thumbs-down questions → golden-set candidates")
+    s.add_argument("--out", default="evals/auc-library/candidates.md")
     s = sub.add_parser("purge-logs", help="apply log retention, or delete one user's rows (data-subject request)")
     s.add_argument("--user", help="delete every row of this user")
     s = sub.add_parser("ask", help="ask one question")
@@ -150,11 +156,22 @@ def _main(argv=None):
         from .accessible import export_html
         Path(a.output).write_text(export_html(a.path, llm), encoding="utf-8")
         print(f"Wrote {a.output}")
+    elif a.cmd == "feedback-report":
+        from .appdb import AppDB
+        cands = AppDB().eval_candidates()
+        rows = ["# Golden-set candidates (from unanswered and thumbs-down questions)", "",
+                "Review each, add the right source page, then move it to golden-questions.md.", "",
+                "| question | lang | seen as |", "|---|---|---|"]
+        rows += [f"| {c['question'].replace('|', '/')} | {c['lang']} | {c['seen_as']} |" for c in cands]
+        Path(a.out).write_text("\n".join(rows) + "\n", encoding="utf-8")
+        print(f"{len(cands)} candidate(s) → {a.out}")
     elif a.cmd == "purge-logs":
+        from .appdb import AppDB
         from .security import SecureLog
-        if not os.getenv("AGENTKIT_LOG"):
-            raise SetupError("AGENTKIT_LOG is not set")
-        print(f"Removed {SecureLog(os.environ['AGENTKIT_LOG']).purge(user=a.user)} row(s).")
+        removed = AppDB().purge() if not a.user else 0
+        if os.getenv("AGENTKIT_LOG"):
+            removed += SecureLog(os.environ["AGENTKIT_LOG"]).purge(user=a.user)
+        print(f"Removed {removed} row(s).")
     elif a.cmd == "test-agents":
         rep = run_smoke(llm)
         Path(a.out).parent.mkdir(parents=True, exist_ok=True)

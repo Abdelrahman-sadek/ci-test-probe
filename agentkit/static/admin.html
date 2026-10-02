@@ -35,6 +35,31 @@
     <ul id="review"></ul>
     <p class="row"><button type="button" id="refresh" class="ghost">Refresh</button></p>
   </section>
+  <section class="panel" aria-labelledby="h-notice">
+    <h2 id="h-notice">Pinned notices (closures, exam hours, outages)</h2>
+    <form id="nf">
+      <label for="n-title">Title</label><input id="n-title" required maxlength="200">
+      <label for="n-body">Notice text</label><textarea id="n-body" required rows="3" maxlength="2000"></textarea>
+      <label for="n-from">Show from (date)</label><input id="n-from" type="date">
+      <label for="n-to">Show until (date)</label><input id="n-to" type="date">
+      <label for="n-lang">Language</label><select id="n-lang"><option value="en">English</option><option value="ar">Arabic</option></select>
+      <p class="row"><button type="submit">Add notice</button></p>
+    </form>
+    <ul id="notices"></ul>
+  </section>
+  <section class="panel" aria-labelledby="h-tix">
+    <h2 id="h-tix">Questions sent to librarians and special-collections requests</h2>
+    <ul id="tickets"></ul>
+  </section>
+  <section class="panel" aria-labelledby="h-fb">
+    <h2 id="h-fb">Feedback and unanswered questions</h2>
+    <p id="fbsum"></p>
+    <ul id="cands"></ul>
+  </section>
+  <section class="panel" aria-labelledby="h-cor">
+    <h2 id="h-cor">OCR pages needing correction</h2>
+    <div id="cors"></div>
+  </section>
   <section class="panel" aria-labelledby="h-stats">
     <h2 id="h-stats">Usage</h2>
     <pre id="stats"></pre>

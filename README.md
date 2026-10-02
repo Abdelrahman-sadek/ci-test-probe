@@ -60,10 +60,11 @@ export ANTHROPIC_API_KEY=sk-...                           # optional: offline, a
 agentkit --index data/index.db ingest knowledge/auc-library/pages   # SQLite FTS5 index (or data/index.json in memory)
 agentkit --index data/index.db serve                      # http://127.0.0.1:8000 · staff page /admin · metrics /metrics
 agentkit --index data/index.db ask "ممكن الخريجين يستعيروا كتب؟" --debug
-agentkit eval --min-pass 0.95 --min-recall 0.9            # 27 golden questions
+agentkit eval --min-pass 0.95 --min-recall 0.9            # 40 golden questions
+agentkit feedback-report                                  # unanswered + 👎 questions → test-set candidates
 agentkit redteam                                          # 30 attacks (EN/AR/Franco, direct + planted in documents)
 agentkit export-accessible scan.pdf -o scan.html          # OCR → accessible HTML
-pytest -q                                                 # 103 tests incl. a real-browser WCAG check
+pytest -q                                                 # 121 tests incl. a real-browser WCAG check
 ```
 
 ```
@@ -79,7 +80,7 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 ### Measured
 | Check | Result |
 |---|---|
-| Golden questions (JSON and SQLite back ends) | **27/27**, recall@5 = 1.0, MRR = 1.0 (EN, AR, Franco-Arabic) |
+| Golden questions (JSON and SQLite back ends) | **40/40**, recall@5 = 1.0, MRR = 1.0 (23 EN, 12 Egyptian/MSA Arabic, 5 Franco-Arabic) |
 | Red-team (`agentkit redteam`) | **30/30** attacks blocked |
 | Accessibility (axe-core in Chromium, WCAG 2.2 A/AA) | **0 violations**, English and Arabic RTL, including a streamed answer |
 | Search latency (SQLite FTS5) | p95 **97 ms @ 20k** chunks, **232 ms @ 100k** |
@@ -94,7 +95,9 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 | Poisoning & injection | https domain allowlist, SHA-256 provenance, review queue for changed sources, quarantine of instruction-like or exfiltrating text, sandboxed parsing |
 | API hardening | Rate limits, body caps, strict CSP, security headers, admin-only staff APIs and metrics, HTTPS via Caddy |
 | Scale | SQLite FTS5 back end, optional Qdrant, answer cache, streaming, background incremental ingestion, Batch API contextualisation, Prometheus metrics with cost |
-| Accessibility | WCAG 2.2 AA chat and staff pages, full Arabic UI, voice input, embeddable widget, WhatsApp channel, accessible HTML export of scans |
+| Accessibility | WCAG 2.2 AA chat, staff and request pages, full Arabic UI, voice input, embeddable widget, WhatsApp channel, accessible HTML export of scans |
+| Library services ([plan 4](docs/plans/04-review-features.md)) | Feedback loop, saved chats/searches, live hours and rooms (LibCal), pinned notices + effective dates, real handoff tickets (LibAnswers/email), subject-librarian routing and consultations, read-only Alma account answers, finding aids (EAD) and rare-materials request form |
+| OCR quality | Word-box layout (columns, RTL, tables), per-page confidence, image clean-up, handwriting notes, staff correction queue, view-the-scan links |
 
 Plans and evidence: [research](docs/research/FINDINGS.md) → [plan 2](docs/plans/02-enhancement-plan.md) → [plan 3: secure, scale, accessible](docs/plans/03-scale-secure-accessible.md). Operations: [deploy](docs/DEPLOY.md) · [staff guide](docs/STAFF-GUIDE.md) · [data policy](docs/DATA-POLICY.md) · [العربية](README.ar.md).
 

@@ -1,0 +1,12 @@
+{
+  "_comment": "Subject routing. Roles and links only — no personal names until AUC confirms them [VERIFY]. booking_url = consultation booking page (e.g. LibCal appointments) [VERIFY]; email/libanswers_queue = where handoffs go [VERIFY].",
+  "default": {"subject": "Reference desk", "contact": "https://library.aucegypt.edu/ar/node/491", "booking_url": "", "email": "", "libanswers_queue": ""},
+  "subjects": [
+    {"subject": "Rare books, archives and special collections", "keywords": ["rare", "archive", "manuscript", "rbscl", "photograph", "egyptology", "special collection", "نادر", "مخطوط", "ارشيف", "صور"], "contact": "https://library.aucegypt.edu/libraries/rbscl/contact-us", "booking_url": "", "email": ""},
+    {"subject": "Business and economics", "keywords": ["business", "economics", "finance", "marketing", "accounting", "management", "اقتصاد", "ادارة", "محاسبة", "تسويق"], "contact": "https://library.aucegypt.edu/ar/node/491", "booking_url": "", "email": ""},
+    {"subject": "Science and engineering", "keywords": ["engineering", "physics", "chemistry", "computer", "biology", "math", "energy", "هندسة", "فيزياء", "كيمياء", "حاسب", "طاقة"], "contact": "https://library.aucegypt.edu/ar/node/491", "booking_url": "", "email": ""},
+    {"subject": "Arab and Middle East studies", "keywords": ["arabic", "middle east", "islamic", "mamluk", "ottoman", "egypt history", "عربي", "اسلامي", "مملوك", "عثماني", "تاريخ"], "contact": "https://library.aucegypt.edu/ar/node/491", "booking_url": "", "email": ""},
+    {"subject": "Social sciences and law", "keywords": ["political", "sociology", "psychology", "law", "policy", "anthropology", "water", "سياسة", "اجتماع", "نفس", "قانون"], "contact": "https://library.aucegypt.edu/ar/node/491", "booking_url": "", "email": ""},
+    {"subject": "Humanities and arts", "keywords": ["literature", "philosophy", "art", "music", "film", "rhetoric", "novel", "ادب", "فلسفة", "فن", "رواية"], "contact": "https://library.aucegypt.edu/ar/node/491", "booking_url": "", "email": ""}
+  ]
+}

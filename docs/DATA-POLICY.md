@@ -9,6 +9,8 @@
 | User identity | Chat log | 30 days | Stored only as an HMAC pseudonym (`AGENTKIT_LOG_SALT`), never as name or email |
 | Question text sent to the model provider | Anthropic API | Per provider terms; request **zero data retention** | Redacted first; no account data, no history beyond the last turn |
 | Library documents | Index (`data/index.db`) | Until removed | Public pages by default; restricted pages carry an `access` level and are only retrieved for authorised groups |
+| Feedback, saved chats and searches, handoff tickets, rare-materials requests | App database (`AGENTKIT_APP_DB`) | 30 days (`agentkit purge-logs`) | Redacted, pseudonymous users, Fernet-encrypted text; history only for signed-in users; contact email stored only with explicit consent |
+| Library account data (loans, fees) | Not stored — fetched live from Alma for the signed-in user | None | Never sent to the model, never cached, never logged |
 | Answer cache | Memory only | 1 hour, cleared on restart or index change | Keyed by access level |
 
 ## Principles

@@ -47,7 +47,7 @@ def _violations(page):
     return [(v["id"], v["impact"]) for v in results.response["violations"]]
 
 
-@pytest.mark.parametrize("path", ["/", "/admin"])
+@pytest.mark.parametrize("path", ["/", "/admin", "/request"])
 def test_pages_have_no_wcag_violations(page, base_url, path):
     page.goto(base_url + path)
     assert _violations(page) == []
