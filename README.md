@@ -108,7 +108,7 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 | Agentic retrieval ([plan 6](docs/plans/06-agentic-rag.md)) | Retrieve → grade (live) → rewrite → retry before handing off; per-request step trace; model-free `/api/search`. Ideas from [production-agentic-rag-course](https://github.com/jamwithai/production-agentic-rag-course) |
 | Answer style | [antislop](https://github.com/miqdadbadjuber/anti-slop) rules: no greetings, praise, closing offers or buzzwords in answers (EN and AR); checked in every eval |
 
-Plans and evidence: [research](docs/research/FINDINGS.md) → [plan 2](docs/plans/02-enhancement-plan.md) → [plan 3: secure, scale, accessible](docs/plans/03-scale-secure-accessible.md). Operations: [deploy](docs/DEPLOY.md) · [pilot plan](docs/PILOT.md) · [runbook](docs/RUNBOOK.md) · [staff guide](docs/STAFF-GUIDE.md) · [data policy](docs/DATA-POLICY.md) · [العربية](README.ar.md).
+Plans and evidence: [research](docs/research/FINDINGS.md) → [plan 2](docs/plans/02-enhancement-plan.md) → [plan 3: secure, scale, accessible](docs/plans/03-scale-secure-accessible.md) → [plan 7: analytics, governance, research tools, dashboard](docs/plans/07-analytics-governance-research.md). Operations: [deploy](docs/DEPLOY.md) · [pilot plan](docs/PILOT.md) · [runbook](docs/RUNBOOK.md) · [staff guide](docs/STAFF-GUIDE.md) · [data policy](docs/DATA-POLICY.md) · [العربية](README.ar.md).
 
 ## AUC chatbot: path to production
 1. **Confirm the facts.** [`knowledge/auc-library/facts.md`](knowledge/auc-library/facts.md) and the [seed pages](knowledge/auc-library/pages/) were paraphrased from search extracts of official pages, each with its URL. Confirm them, and fill every `[VERIFY]` (hours, catalog system, databases).
