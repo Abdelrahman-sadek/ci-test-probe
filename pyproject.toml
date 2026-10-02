@@ -1,0 +1,19 @@
+[project]
+name = "agentkit"
+version = "0.1.0"
+description = "Lean agents + OCR + RAG + AUC Library chat"
+requires-python = ">=3.10"
+dependencies = ["anthropic>=0.40", "pymupdf>=1.24"]
+
+[project.optional-dependencies]
+tesseract = ["pytesseract", "pillow"]
+dev = ["pytest"]
+
+[project.scripts]
+agentkit = "agentkit.cli:main"
+
+[tool.setuptools]
+packages = ["agentkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

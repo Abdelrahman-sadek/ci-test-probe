@@ -1,14 +1,23 @@
-name: Lint agents
+name: Agents CI
 on:
   push:
-    paths: ["agents/**", "scripts/**"]
+    paths: ["agents/**", "agentkit/**", "scripts/**", "tests/**", "evals/**", "samples/**"]
   pull_request:
 jobs:
-  lint:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install -e ".[dev]"
       - run: scripts/lint-agents.sh
+      - run: pytest -q
+      - name: End-to-end (offline)
+        run: |
+          agentkit ingest samples/auc-library
+          agentkit eval
+          agentkit test-agents
       - name: Install smoke test
         run: |
           HOME=$(mktemp -d) scripts/install.sh claude
