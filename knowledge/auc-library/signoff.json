@@ -19,5 +19,8 @@
     "Course registration, IT, finance (referred to campus offices)"
   ],
   "verify_owner": "",
-  "verify_deadline": ""
+  "verify_deadline": "",
+  "security_review": {"by": "", "date": "", "report": ""},
+  "dpo": {"by": "", "date": ""},
+  "staff_rota": {"by": "", "date": "", "url": ""}
 }

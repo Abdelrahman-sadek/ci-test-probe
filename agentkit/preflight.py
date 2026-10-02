@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from . import ROOT
+from .evals import config_fingerprint
 
 KNOWLEDGE_FILES = ("librarians.json", "referrals.json", "related-topics.json")
 
@@ -25,6 +26,11 @@ def check(index) -> dict:
     so = json.loads(signoff.read_text(encoding="utf-8")) if signoff.exists() else {}
     if not (so.get("approved_by") and so.get("date")):
         blocking.append("no AUC sign-off on corpus scope: fill approved_by and date in knowledge/auc-library/signoff.json")
+    for key, what in (("security_review", "independent security test"), ("dpo", "data protection sign-off"),
+                      ("staff_rota", "handoff owner and closed-hours cover")):
+        rec = so.get(key) or {}
+        if not (rec.get("by") and rec.get("date")):
+            blocking.append(f"no {what} recorded: fill {key}.by and {key}.date in signoff.json")
     if index.size == 0:
         blocking.append("the index is empty")
     blocking += _live_evals(index, os.getenv("AGENTKIT_EVAL_DIR", "data"))
@@ -70,6 +76,8 @@ def _live_evals(index, folder: str) -> list[str]:
             problems.append(f"the {label} eval ran on the offline stand-in; re-run it with ANTHROPIC_API_KEY set")
         elif rep.get("index_version") != index.version:
             problems.append(f"the {label} eval is older than the current index; re-run it")
+        elif rep.get("config") != config_fingerprint():
+            problems.append(f"models, prompts, guards or routes changed since the {label} eval; re-run it")
         elif rep["pass_rate"] < floor:
             problems.append(f"{label} eval pass rate {rep['pass_rate']} is below {floor}")
     return problems

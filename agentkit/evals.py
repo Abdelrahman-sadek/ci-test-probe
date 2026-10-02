@@ -76,7 +76,8 @@ def run_golden(chat: LibraryChat, path: Path = GOLDEN) -> dict:
             "pass_rate": round(sum(r["pass"] for r in results) / max(n, 1), 3),
             "recall_at_k": round(recalled / max(with_gold, 1), 3), "mrr": round(sum(rr) / max(len(rr), 1), 3),
             "k": chat.k, "by_lang": {k: f"{p}/{t}" for k, (p, t) in by_lang.items()},
-            "live": bool(chat.llm.live), "index_version": chat.index.version, "results": results}
+            "live": bool(chat.llm.live), "index_version": chat.index.version, "config": config_fingerprint(),
+            "results": results}
 
 
 def run_smoke(llm: LLM, path: Path = ROOT / "evals/agents/smoke.json") -> dict:
@@ -110,3 +111,13 @@ def to_markdown(title: str, report: dict) -> str:
         else:
             lines.append(f"- {mark} {r['agent']} {r.get('note', '')}")
     return "\n".join(lines) + "\n"
+
+
+def config_fingerprint() -> str:
+    """Hash of everything besides the index that changes answers: models, agent prompts, guards, routes, style
+    rules. Preflight requires evals to have run on the same fingerprint."""
+    import hashlib
+    from . import chat as chat_mod, llm as llm_mod
+    parts = [llm_mod.MODEL_SMART, llm_mod.MODEL_FAST, style.RULES, repr(chat_mod.GUARDS), repr(chat_mod.ROUTES),
+             *(f"{n}:{a.body}" for n, a in sorted(load_all().items()))]
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]

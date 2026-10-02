@@ -9,6 +9,25 @@ agentkit --index data/index.db eval --set golden    # also: --set dev, --set hel
 agentkit redteam && agentkit test-agents && pytest -q && python scripts/ocr_bench.py
 ```
 
+## Round 3: final verdicts (2026-10-02)
+
+**Sonnet: VERDICT: OK. Haiku: VERDICT: OK** (for entering the gated pilot). Both agreed nothing left is a P0: the code gates block real users until the live-model run and AUC's human sign-offs are done. Their remaining P1s were applied before this commit:
+
+| Reviewer item | Change | Test |
+|---|---|---|
+| Eval reports could be stale on config (Sonnet) | Reports carry a fingerprint of models, agent prompts, guards, routes and style rules; preflight requires a match | `test_eval_must_match_current_config` |
+| Pen test and DPO only in prose (Sonnet) | `signoff.json` records `security_review`, `dpo`, `staff_rota` (by, date); preflight blocks when any is empty | `test_preflight_*` |
+| No kill switch (Sonnet) | `POST /admin/api/maintenance` or `AGENTKIT_MAINTENANCE=1`: every question gets a handoff and the cache is bypassed; drill in PILOT and RUNBOOK | `test_kill_switch_pauses_answers_and_cache` |
+| Unverified-scan label in all channels (Sonnet) | The label is part of the answer text, which the web UI, widget and WhatsApp all render | `test_unchecked_scan_is_labelled` |
+| Numeric OCR gate (Sonnet) | PILOT: mean CER ≤ 0.10 on non-diacritized print for real scans | — |
+| Access review and key rotation (Sonnet) | RUNBOOK: monthly review, per-term rotation steps, log-key caveat | — |
+| Live-eval failure remediation (Haiku) | RUNBOOK: per-check diagnosis and re-run steps | — |
+| Thesis requests, related-topics upkeep (Haiku) | PILOT: expected behaviour and a content-upkeep table with owners | — |
+
+Deferred, with reasons: persistent spend counter across restarts (P2; one process, daily budget); semantic related topics (P2; needs a larger corpus); figure-caption indexing (P2; behind `AGENTKIT_FIGURES`); real screen-reader, real-scan and live-model results (human and live runs, enforced as pilot gates).
+
+Results (offline stand-in): golden 40/40 on JSON and SQLite; dev 20/25; held-out 16/20 (recall 1.0 JSON, 0.938 SQLite); red-team 30/30; agents 19/19; **148 tests pass**; bandit 0 medium/high. `agentkit preflight` in this checkout: 12 blocking problems, the expected result before any live run or sign-off.
+
 ## Round 2 → round 3 (2026-10-02)
 
 Reviewer verdicts on round 2: **Sonnet: NEEDS WORK**, **Haiku: NEEDS WORK**. Both said the code is strong; the blockers are going live without a live-model eval, unverified content and corpus scope, and spoofable proxy identity. Changes:

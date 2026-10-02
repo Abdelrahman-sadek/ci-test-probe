@@ -5,6 +5,7 @@ information, LLM07 system-prompt leakage, LLM08 access control on retrieval, LLM
 only from cited sources), LLM10 unbounded consumption (input caps).
 """
 import datetime
+import os
 import re
 import time
 import uuid
@@ -139,6 +140,8 @@ def referral(question: str) -> dict | None:
     return None
 
 
+MAINTENANCE_TEXT = ("The assistant is paused while library staff check its answers. Please ask a librarian: "
+                    "use the button below or the library's Contact Us page.")
 _NUM = re.compile(r"\b\d+(?:[.:]\d+)?\b")
 _AUDIENCE = re.compile(r"\b(alumn\w*|undergrad\w*|graduate|faculty|staff|visitors?|external|researchers?|"
                        r"خريج\w*|طلاب|طالب|اعضاء هيئه التدريس|زوار)\b")
@@ -263,6 +266,7 @@ class LibraryChat:
                  appdb=None, libcal=None, account=None):
         self.index, self.llm, self.k, self.access = index, llm, k, access
         self.catalog, self.cache = catalog, cache
+        self.maintenance = os.getenv("AGENTKIT_MAINTENANCE") == "1"  # also toggled from the staff page
         self.appdb, self.libcal, self.account = appdb, libcal, account
         self.log = SecureLog(log_path) if log_path else None
         self.agents = load_all()
@@ -310,6 +314,9 @@ class LibraryChat:
         g = guard(question)
         if g:
             return "final", Answer(g[1], "chat-guardrails", lang, mode="refuse", guard=g[0])
+        if self.maintenance:  # kill switch: stop generating answers, keep the route to a librarian open
+            return "final", self._with_actions(Answer(MAINTENANCE_TEXT, "auc-library-concierge", lang,
+                                                      mode="handoff"), question)
         if ACCOUNT_RE.search(question):
             return "final", self._account(question, lang)
         prev = next((h["content"] for h in reversed(history or []) if h.get("role") == "user"), "")
@@ -439,7 +446,7 @@ class LibraryChat:
         return Answer("\n".join(lines), "auc-catalog-navigator", lang, mode="account", actions=actions)
 
     def _cache_key(self, question, history, access):
-        if self.cache is None or history:
+        if self.cache is None or history or self.maintenance:  # paused: never serve or store cached answers
             return None
         return self.cache.key(question, self.index.version, access)
 

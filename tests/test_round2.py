@@ -8,6 +8,7 @@ from agentkit.chat import LibraryChat, resolve_conflicts
 from agentkit.llm import FakeLLM
 from agentkit.rag import Chunk, Index
 from agentkit.security import authenticate
+from test_features import ADMIN, app  # noqa: F401  (fixture reuse)
 
 
 def chunk(id_, text, section="", method="text", confidence=1.0, updated="2026-01-01", source=None):
@@ -26,9 +27,10 @@ def ready_env(monkeypatch, tmp_path):
 
 
 def write_reports(folder, index, live=True, rate=1.0):
+    from agentkit.evals import config_fingerprint
     for name in ("eval", "heldout"):
         (folder / f"{name}-report.json").write_text(json.dumps(
-            {"live": live, "pass_rate": rate, "index_version": index.version}))
+            {"live": live, "pass_rate": rate, "index_version": index.version, "config": config_fingerprint()}))
 
 
 def test_preflight_blocks_unverified_offline_and_unsigned(ready_env, monkeypatch, tmp_path):
@@ -41,7 +43,9 @@ def test_preflight_blocks_unverified_offline_and_unsigned(ready_env, monkeypatch
 
 def test_preflight_passes_when_everything_is_in_place(ready_env, monkeypatch, tmp_path):
     from agentkit import ROOT
-    signoff = {"approved_by": "Head of reference", "date": "2026-10-01"}
+    rec = {"by": "Named owner", "date": "2026-10-01"}
+    signoff = {"approved_by": "Head of reference", "date": "2026-10-01", "security_review": rec, "dpo": rec,
+               "staff_rota": rec}
     real = ROOT / "knowledge/auc-library/signoff.json"
     original = real.read_text(encoding="utf-8")
     idx = Index([chunk("a", "Alumni can borrow 5 books.")])
@@ -91,3 +95,23 @@ def test_style_cleanup_never_changes_facts(answer):
     keep = r"\d+|[٠-٩]+|https?://\S+|\bnot\b|cannot|unless|لا|\[\d+\]"
     assert re.findall(keep, out) == re.findall(keep, answer.split("!", 1)[-1] if answer.startswith(("Great", "Certainly", "بالتأكيد")) else answer)
     assert not style.findings(out)
+
+
+def test_kill_switch_pauses_answers_and_cache(app):  # noqa: F811
+    client, chat, _, _ = app
+    q = {"question": "How many books can undergraduates borrow?"}
+    assert client.post("/api/ask", json=q).json()["mode"] == "answer"
+    assert client.post("/admin/api/maintenance", json={"on": True}).status_code in (401, 403)
+    assert client.post("/admin/api/maintenance", json={"on": True}, headers=ADMIN).json() == {"maintenance": True}
+    paused = client.post("/api/ask", json=q).json()
+    assert paused["mode"] == "handoff" and "paused" in paused["answer"]  # the cached answer is not served
+    client.post("/admin/api/maintenance", json={"on": False}, headers=ADMIN)
+    assert client.post("/api/ask", json=q).json()["mode"] == "answer"
+
+
+def test_eval_must_match_current_config(ready_env, monkeypatch):
+    from agentkit import llm
+    from agentkit.evals import config_fingerprint
+    before = config_fingerprint()
+    monkeypatch.setattr(llm, "MODEL_SMART", "claude-other")
+    assert config_fingerprint() != before

@@ -15,6 +15,19 @@
 | `agentkit pilot-report` | weekly JSON for the pilot metrics in [PILOT.md](PILOT.md) |
 | `/metrics` (Prometheus, admin) | for IT dashboards and alerts: failures, degraded answers, handoff failures, latency, cost |
 
+## Kill switch
+A harmful or wrong answer is spreading: pause answering at once, then investigate.
+- Staff page or API: `POST /admin/api/maintenance {"on": true}` (admin). Every question gets a librarian handoff; cached answers are neither served nor stored. `{"on": false}` resumes.
+- At start-up: `AGENTKIT_MAINTENANCE=1`.
+- Drill it once before the pilot and once mid-pilot; record the time from decision to paused.
+
+## If preflight fails on live evals
+1. Open `data/eval-report.md` / `data/heldout-report.md`: each failing row names the failed check (route, retrieval, citation, quoted, facts, style, faithful).
+2. Retrieval or citation failures: the page is missing or unclear. Fix the source page, re-ingest it, `agentkit review`/`approve`.
+3. Facts or faithful failures with the right page cited: inspect with `agentkit ask "<question>" --debug`; fix the page wording first, the prompt second.
+4. Route or mode failures: adjust guards or routes, then add the case to `dev.md`.
+5. Re-run `agentkit eval --set golden` and `--set heldout` live, then `agentkit preflight`. Changing models, prompts, guards or routes invalidates earlier reports by design.
+
 ## Incidents
 | Symptom | Likely cause | Action |
 |---|---|---|
@@ -47,5 +60,6 @@ Each source in `knowledge/auc-library/sources.md` names its owner. Defaults unti
 - **SSO:** `AGENTKIT_AUTH=proxy` trusts `X-Forwarded-User`/`-Groups` only when the request also carries `X-Proxy-Secret` equal to `AGENTKIT_PROXY_SECRET`; `deploy/Caddyfile` strips client-sent identity headers and adds the secret. In `docker-compose.yml` the app only `expose`s port 8000 on the internal network, so only Caddy can reach it. In JWT mode, prefer RS256 keys from `AGENTKIT_JWT_JWKS` over a shared HS256 secret. `AGENTKIT_TRUST_PROXY=1` only makes Uvicorn read the client IP from the proxy (for rate limits).
 - **WhatsApp webhook:** requests without a valid `X-Hub-Signature-256` are rejected; rotate the app secret if it leaks.
 - **Staff page:** admin APIs need the admin role or `X-API-Key`; keep the key out of browsers on shared machines and rotate it each term. Restrict `/admin` and `/metrics` to campus ranges with the commented block in `deploy/Caddyfile`.
+- **Access review:** monthly, list who holds the admin role and the admin key; remove leavers. Rotate `AGENTKIT_ADMIN_KEY`, `AGENTKIT_PROXY_SECRET` and the WhatsApp app secret each term or on any suspected leak: set the new value in `.env`, `docker compose up -d`, confirm `/healthz`, revoke the old one. Rotating `AGENTKIT_LOG_KEY` makes older encrypted logs unreadable, so rotate it at a retention boundary.
 - **Limits of this review:** these are design checks and automated tests, not a penetration test. An independent test of SSO, the staff page and the WhatsApp webhook is a launch requirement (see PILOT.md).
 - **Single process:** the circuit breaker and daily budget live in the server process. The container runs one process; if you run several, the budget applies to each one.

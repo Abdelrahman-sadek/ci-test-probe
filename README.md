@@ -65,7 +65,7 @@ agentkit feedback-report                                  # unanswered + 👎 qu
 agentkit redteam                                          # 30 attacks (EN/AR/Franco, direct + planted in documents)
 agentkit preflight                                        # go/no-go before real users (live evals, sign-off, security)
 agentkit export-accessible scan.pdf -o scan.html          # OCR → accessible HTML
-pytest -q                                                 # 146 tests incl. a real-browser WCAG check
+pytest -q                                                 # 148 tests incl. a real-browser WCAG check
 ```
 
 ```
@@ -83,6 +83,7 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 |---|---|
 | Golden questions (JSON and SQLite back ends) | **40/40**, recall@5 = 1.0, MRR = 1.0 (23 EN, 12 Egyptian/MSA Arabic, 5 Franco-Arabic) |
 | Held-out questions, never tuned on (offline answerer) | **11/20** on the blind run, 16/20 after general fixes, recall@5 1.0; details in the [evaluation log](docs/EVALUATION-LOG.md) |
+| Multi-model review (3 rounds) | Final verdicts: **OK** from both reviewers for entering the gated pilot ([log](docs/EVALUATION-LOG.md)) |
 | OCR bench (Tesseract) | CER 0.000 on clean/rotated/blurred/noisy EN and AR; diacritized Arabic goes to the correction queue |
 | Red-team (`agentkit redteam`) | **30/30** attacks blocked |
 | Accessibility (axe-core in Chromium, WCAG 2.2 A/AA) | **0 violations** on chat, staff, request and privacy pages, English and Arabic RTL |
@@ -102,6 +103,7 @@ documents ─► allowlist ─► sandboxed parse (size/page/time/memory caps) �
 | Library services ([plan 4](docs/plans/04-review-features.md)) | Feedback loop, saved chats/searches, live hours and rooms (LibCal), pinned notices + effective dates, real handoff tickets (LibAnswers/email), subject-librarian routing and consultations, read-only Alma account answers, finding aids (EAD) and rare-materials request form |
 | OCR quality | Word-box layout (columns, RTL, tables), per-page confidence, image clean-up, two-pass Tesseract, handwriting notes, staff correction queue, view-the-scan links, searchable-PDF export |
 | Resilience and operations ([plan 5](docs/plans/05-review-round1.md)) | Outage and budget fallback to search-results-only answers, handoff never lost, SLA escalation, index snapshots and rollback, freshness report, self-service data export and deletion |
+| Pilot gate | `agentkit preflight` blocks real users until evals ran live on the current index and config, [VERIFY] facts are gone, and AUC sign-offs (scope, security test, data protection, staff rota) are recorded; kill switch on the staff page |
 | Answer style | [antislop](https://github.com/miqdadbadjuber/anti-slop) rules: no greetings, praise, closing offers or buzzwords in answers (EN and AR); checked in every eval |
 
 Plans and evidence: [research](docs/research/FINDINGS.md) → [plan 2](docs/plans/02-enhancement-plan.md) → [plan 3: secure, scale, accessible](docs/plans/03-scale-secure-accessible.md). Operations: [deploy](docs/DEPLOY.md) · [pilot plan](docs/PILOT.md) · [runbook](docs/RUNBOOK.md) · [staff guide](docs/STAFF-GUIDE.md) · [data policy](docs/DATA-POLICY.md) · [العربية](README.ar.md).

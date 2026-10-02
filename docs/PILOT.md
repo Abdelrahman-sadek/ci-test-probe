@@ -20,7 +20,8 @@ A four-week pilot answers one question: does the assistant resolve routine libra
 | Independent security test of SSO, staff page and WhatsApp webhook | IT security | no open high findings |
 | Screen-reader test with NVDA and VoiceOver, English and Arabic, by real users | Accessibility services | no blocking issues |
 | Handoff coverage: named owner per queue, cover for closed hours and holidays, tested with real subject librarians | Head of reference | rota published |
-| 20–30 real AUC scans with ground truth; compare Claude and Tesseract with `scripts/ocr_bench.py --gt-dir` | RBSCL + systems | CER recorded; pages below 0.7 confidence corrected before indexing |
+| 20–30 real AUC scans with ground truth; compare Claude and Tesseract with `scripts/ocr_bench.py --gt-dir` | RBSCL + systems | mean CER ≤ 0.10 on non-diacritized print for the chosen engine; diacritized and handwritten pages corrected by staff before they are answered from; record the confidence distribution |
+| Kill-switch drill (`/admin/api/maintenance`) | Systems librarian | paused within 5 minutes of the decision |
 
 Gate: with `AGENTKIT_PILOT=1`, `agentkit serve` refuses to start until `agentkit preflight` passes.
 
@@ -34,6 +35,18 @@ Gate: with `AGENTKIT_PILOT=1`, `agentkit serve` refuses to start until `agentkit
 | Satisfaction | 👍 ÷ rated answers | ≥ 80 % |
 | Arabic parity | correctness for Arabic/Franco questions vs English | within 5 points |
 | Cost | `agentkit_llm_cost_usd_total` per 1,000 questions | under the agreed budget |
+
+## Expected behaviour for common requests
+- **A specific thesis:** the assistant explains how to search AUC Knowledge Fountain (by school, department, author or keyword) and links it. With the Primo connector configured, the catalog navigator also returns live catalog results. It does not summarise thesis full text; requests to write or summarise graded work get the integrity reply.
+- **Out of scope** (fees, interlibrary loan, database-specific rules): a handoff with the librarian button, or a referral to the campus office.
+
+## Content upkeep during the pilot
+| File | Who updates it | How |
+|---|---|---|
+| Pages under `knowledge/auc-library/pages/` | content owners (RUNBOOK) | edit, re-ingest, approve in `/admin` Review |
+| Notices (closures, exam hours) | library communications | `/admin` Notices, with start and end dates |
+| `related-topics.json` | reference librarian on rota | weekly: add topics suggested by unanswered and 👎 questions from `agentkit feedback-report` |
+| `librarians.json`, `referrals.json` | head of reference | when contacts or queues change |
 
 ## Weekly loop
 1. Run `agentkit pilot-report` and `agentkit feedback-report`.

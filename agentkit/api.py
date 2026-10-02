@@ -10,6 +10,7 @@ strict CSP and security headers; CORS and frame-ancestors only for configured em
 """
 import base64
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -22,6 +23,8 @@ from pydantic import BaseModel, Field
 from .agents import load_all
 from .chat import LibraryChat
 from .metrics import METRICS
+
+log = logging.getLogger("agentkit.api")
 from .rag import approve
 from .security import AuthError, Principal, RateLimiter, authenticate
 from .whatsapp import WhatsAppSender, handle, verify_signature
@@ -90,6 +93,10 @@ class RareRequestIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     email: str = Field(max_length=200, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     consent: bool
+
+
+class MaintenanceIn(BaseModel):
+    on: bool
 
 
 class NoticeIn(BaseModel):
@@ -413,6 +420,17 @@ def create_app(chat: LibraryChat, jobs=None, uploads_dir: str | Path = "data/upl
     @app.get("/admin/api/notices")
     def list_notices(_: Principal = Depends(admin)):
         return need(appdb).notices(include_expired=True)
+
+    @app.get("/admin/api/maintenance")
+    def get_maintenance(_: Principal = Depends(admin)):
+        return {"maintenance": chat.maintenance}
+
+    @app.post("/admin/api/maintenance")
+    def set_maintenance(body: MaintenanceIn, _: Principal = Depends(admin)):
+        """Kill switch: every question gets a librarian handoff instead of a generated answer."""
+        chat.maintenance = body.on
+        log.warning("maintenance mode %s by admin", "on" if chat.maintenance else "off")
+        return {"maintenance": chat.maintenance}
 
     @app.post("/admin/api/notices")
     def add_notice(body: NoticeIn, _: Principal = Depends(admin)):
