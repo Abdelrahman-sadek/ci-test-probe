@@ -1,4 +1,4 @@
-"""Load agent Markdown files (frontmatter + body) from agents/."""
+"""Load agent Markdown files (frontmatter + body) from plugins/<division>/agents/."""
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,8 +23,8 @@ def parse(path: Path) -> Agent:
         key, _, val = line.partition(":")
         meta[key.strip()] = val.split("  #")[0].strip()
     return Agent(meta["name"], meta.get("description", ""), meta.get("model", "inherit"),
-                 path.parent.name, body.strip(), path)
+                 path.parent.parent.name, body.strip(), path)
 
 
-def load_all(root: Path = ROOT / "agents") -> dict[str, Agent]:
-    return {a.name: a for a in map(parse, sorted(root.glob("*/*.md")))}
+def load_all(root: Path = ROOT / "plugins") -> dict[str, Agent]:
+    return {a.name: a for a in map(parse, sorted(root.glob("*/agents/*.md")))}

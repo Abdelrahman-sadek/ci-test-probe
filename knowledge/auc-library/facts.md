@@ -1,35 +1,55 @@
 # AUC Libraries — Fact Sheet
 
-> Single source of truth for the AUC agents. **Everything tagged `[VERIFY]` must be confirmed with AUC Libraries before production.** Update each semester. Last reviewed: _YYYY-MM-DD_.
+Single source of truth for the AUC agents. Last reviewed: **2026-10-02**.
+
+Confidence key:
+- **S** = official AUC page, read through a search-engine extract (the site was blocked from the build environment). Confirm on the page.
+- **2** = secondary source.
+- **`[VERIFY]`** = unknown; must be confirmed with AUC Libraries before production.
+
+The bot answers from the seed corpus in [`pages/`](pages/), which mirrors this sheet with one page per source.
 
 ## Institution
-- The American University in Cairo (AUC), main campus: New Cairo; historic campus: Tahrir Square, downtown Cairo.
-- Libraries are part of AUC's Libraries and Learning Technologies unit `[VERIFY]`.
-- Library website: https://library.aucegypt.edu `[VERIFY]`
-
-## Libraries
-| Library | Location | Notes |
+| Fact | Conf. | Source |
 |---|---|---|
-| Main Library | New Cairo campus | Circulating collections, study spaces, research help `[VERIFY]` |
-| Rare Books and Special Collections Library (RBSCL) | New Cairo campus `[VERIFY]` | Rare books, archives, Middle East & Egyptology-related collections `[VERIFY]` |
-| University Archives | `[VERIFY]` | AUC institutional records |
+| The libraries are run by AUC Libraries and Learning Technologies (LLT). | 2 | [Wikipedia: AUC LLT](https://en.wikipedia.org/wiki/AUC_Libraries_and_Learning_Technologies) |
+| Library website: https://library.aucegypt.edu | S | site itself |
+| Main campus: New Cairo. The Main Library sits on Bartlett Plaza at the center of campus. | S | [RBSCL visit & access](https://library.aucegypt.edu/libraries/rbscl/visit-access) |
+
+## Borrowing ([Borrow/Renew Books](https://library.aucegypt.edu/services/borrow-renew-books), conf. S)
+| Patron | Loan period | Max books |
+|---|---|---|
+| Undergraduate students | 28 days | 20 |
+| Graduate students | Academic semester | 30 |
+| Faculty & administrators / adjunct faculty / emeritus professors | Academic semester | 30 |
+| Alumni | 14 days | 5 |
+
+- Requires a valid AUC ID in good standing (no fines, no overdue books). Check out at the circulation desk on the plaza level or at self-checkout units on each floor.
+- Renew on or before the due date if there is no hold: online, in person, by phone or by email.
+- Fines amounts, holds and ILL / document delivery: `[VERIFY]`.
+
+## Rare Books and Special Collections Library (RBSCL)
+| Fact | Conf. | Source |
+|---|---|---|
+| Visitor entrance: 3rd floor of the Main Library (New Cairo). The floor has the Research Help Desk and the John Gerhart Reading Room. | S | [Visit & access](https://library.aucegypt.edu/libraries/rbscl/visit-access), [About](https://library.aucegypt.edu/rare-books-and-special-collections-library/about) |
+| AUC community welcome; appointments recommended for archives. External visitors contact staff first and bring a passport or government ID; heavy external users apply for a paid user card. | S | Visit & access |
+| Strengths: Egyptology, Islamic art & architecture, travel literature. | S | [AUC news release](https://aucegypt.edu/media/media-releases/auc%25E2%2580%2599s-rare-books-and-special-collections-library-preserves-local-and) |
+| Digital library launched fall 2011 on OCLC CONTENTdm. Its URL: `[VERIFY]`. | 2 | [infoDOCKET 2012](https://www.infodocket.com/2012/03/27/american-university-in-cairo-launches-rare-books-and-special-collections-digital-library/) |
 
 ## Discovery & repositories
-- Catalog/discovery tool: `[VERIFY: name + URL]`
-- Digital repository (theses, faculty works): `[VERIFY: name + URL]`
-- Digital collections (digitised special collections): `[VERIFY: URL]`
-- A–Z databases & subject guides: `[VERIFY: URL]`
-- Off-campus access method (proxy/SSO): `[VERIFY]`
+| Fact | Conf. | Source |
+|---|---|---|
+| Institutional repository: **AUC Knowledge Fountain**, https://fount.aucegypt.edu (Digital Commons): theses, dissertations, capstones. | S | [Student Research](https://fount.aucegypt.edu/student_research) |
+| Knowledge Fountain OAI-PMH endpoint (for harvesting) | `[VERIFY]` | — |
+| Catalog / discovery system name and URL (Primo? `vid`?) | `[VERIFY]` | — |
+| A–Z databases list, subject guides, off-campus access method | `[VERIFY]` | — |
 
-## Services (fill from official pages)
-| Topic | Answer | Source URL | Valid until |
+## Services
+| Topic | Answer | Conf. | Source |
 |---|---|---|---|
-| Opening hours | `[VERIFY]` | | |
-| Borrowing limits & loan periods (by user type) | `[VERIFY]` | | |
-| Renewals, holds, fines | `[VERIFY]` | | |
-| Interlibrary loan / document delivery | `[VERIFY]` | | |
-| Study rooms booking | `[VERIFY]` | | |
-| Printing / scanning | `[VERIFY]` | | |
-| Alumni & visitor access | `[VERIFY]` | | |
-| Ask a Librarian (chat/email/phone) | `[VERIFY]` | | |
-| Emergency / counselling referral | `[VERIFY]` | | |
+| Main Library hours | Change by period; the bot points users to the website instead of guessing. | `[VERIFY]` | — |
+| SRC Library (Social Research Center) | Sun–Thu 10:00–15:30; on-site use for the AUC community; check-out for SRC staff only (5 items / 14 days). | S | [SRC Library](https://www.aucegypt.edu/research/src/library) |
+| Subject librarians | Every school (and some departments) has an assigned librarian as first point of contact. | S | [Contact Us](https://library.aucegypt.edu/ar/node/491) |
+| Emails / phone numbers | Not stored here: they were obfuscated in the extracts. Link to the Contact Us pages instead. | `[VERIFY]` | — |
+| Study rooms, printing, Ask-a-Librarian chat | — | `[VERIFY]` | — |
+| Emergency / counselling referral | Egypt ambulance 123. AUC counselling contact: `[VERIFY]`. | — | — |

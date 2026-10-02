@@ -1,24 +1,38 @@
 name: Agents CI
 on:
   push:
-    paths: ["agents/**", "agentkit/**", "scripts/**", "tests/**", "evals/**", "samples/**"]
+    paths: ["plugins/**", ".claude-plugin/**", "agentkit/**", "scripts/**", "tests/**", "evals/**", "knowledge/**", "samples/**", "pyproject.toml", ".github/workflows/**"]
   pull_request:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
+        with: {python-version: "${{ matrix.python }}"}
       - run: pip install -e ".[dev]"
-      - run: scripts/lint-agents.sh
+      - name: Lint agents, skills, marketplace
+        run: scripts/lint-agents.sh
       - run: pytest -q
-      - name: End-to-end (offline)
+      - name: End-to-end offline eval (fails below thresholds)
         run: |
-          agentkit ingest samples/auc-library
-          agentkit eval
+          agentkit ingest knowledge/auc-library/pages
+          agentkit eval --min-pass 0.95 --min-recall 0.9
           agentkit test-agents
-      - name: Install smoke test
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "22"}
+      - name: Validate Claude Code plugin marketplace
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude plugin validate .
+      - name: Install script smoke test
         run: |
           HOME=$(mktemp -d) scripts/install.sh claude
           scripts/install.sh cursor && scripts/install.sh agents-md

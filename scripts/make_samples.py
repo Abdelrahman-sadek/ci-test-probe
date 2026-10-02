@@ -1,6 +1,6 @@
 """Generate PDF test fixtures: an image-only 'scanned' PDF (needs OCR) and an Arabic text-layer PDF.
 
-    python scripts/make_samples.py [outdir]   (default: samples/auc-library)
+    python scripts/make_samples.py [outdir]   (default: samples/fixtures)
 """
 import sys
 from pathlib import Path
@@ -35,5 +35,5 @@ def make(outdir: Path) -> tuple[Path, Path]:
 
 
 if __name__ == "__main__":
-    for p in make(Path(sys.argv[1] if len(sys.argv) > 1 else "samples/auc-library")):
+    for p in make(Path(sys.argv[1] if len(sys.argv) > 1 else "samples/fixtures")):
         print("wrote", p)

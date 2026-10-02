@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Install agents into an AI tool.
-#   scripts/install.sh claude [--project] [division...]   → ~/.claude/agents (or ./.claude/agents)
-#   scripts/install.sh cursor [division...]               → ./.cursor/rules/*.mdc
-#   scripts/install.sh agents-md [division...]            → ./AGENTS.generated.md (Codex, Copilot, Gemini CLI, Aider…)
+# Install agents into an AI tool. Divisions: core rag chat auc-library (default: all).
+#   scripts/install.sh claude [--project] [division...]  → ~/.claude/agents + skills (or ./.claude/…)
+#   scripts/install.sh cursor [division...]              → ./.cursor/rules/*.mdc
+#   scripts/install.sh agents-md [division...]           → ./AGENTS.generated.md (Codex, Copilot, Gemini CLI, Aider…)
+# Claude Code users can instead: /plugin marketplace add <owner>/<repo>  then  /plugin install agent-kit-rag@agent-kit
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 tool="${1:-}"; shift || true
 project=0; [ "${1:-}" = "--project" ] && { project=1; shift; }
-divs=("$@"); [ ${#divs[@]} -eq 0 ] && divs=($(ls "$ROOT/agents"))
-files=(); for d in "${divs[@]}"; do files+=("$ROOT"/agents/"$d"/*.md); done
+divs=("$@"); [ ${#divs[@]} -eq 0 ] && divs=($(ls "$ROOT/plugins"))
+files=(); for d in "${divs[@]}"; do files+=("$ROOT"/plugins/"$d"/agents/*.md); done
 body() { awk 'NR==1{next} f{print} /^---$/{f=1}' "$1"; }
 field() { sed -n "s/^$2:[[:space:]]*//p" "$1" | head -1; }
 case "$tool" in
   claude)
-    dest="$HOME/.claude/agents"; [ $project -eq 1 ] && dest="$PWD/.claude/agents"
-    mkdir -p "$dest"; cp "${files[@]}" "$dest/"; echo "Installed ${#files[@]} agents → $dest" ;;
+    base="$HOME/.claude"; [ $project -eq 1 ] && base="$PWD/.claude"
+    mkdir -p "$base/agents"; cp "${files[@]}" "$base/agents/"
+    for d in "${divs[@]}"; do [ -d "$ROOT/plugins/$d/skills" ] && mkdir -p "$base/skills" && cp -r "$ROOT/plugins/$d/skills/"* "$base/skills/"; done
+    echo "Installed ${#files[@]} agents → $base/agents" ;;
   cursor)
     dest="$PWD/.cursor/rules"; mkdir -p "$dest"
     for f in "${files[@]}"; do
@@ -26,5 +29,5 @@ case "$tool" in
       for f in "${files[@]}"; do echo "- **$(field "$f" name)** — $(field "$f" description)"; done
       for f in "${files[@]}"; do echo; echo "---"; body "$f"; done; } >"$out"
     echo "Wrote $out" ;;
-  *) sed -n '2,6p' "$0"; exit 1 ;;
+  *) sed -n '2,7p' "$0"; exit 1 ;;
 esac

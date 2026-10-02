@@ -1,0 +1,53 @@
+{
+  "name": "agent-kit",
+  "description": "Lean, CI-validated AI agents: core (build agents for any use), RAG + OCR, chat, and AUC Library divisions.",
+  "owner": {
+    "name": "Abdelrahman Sadek"
+  },
+  "plugins": [
+    {
+      "name": "agent-kit-core",
+      "source": "./plugins/core",
+      "description": "Build agents for any use: agent architect, orchestrator, prompt engineer, evaluator, MCP tool builder, plus the lean-agent-authoring skill.",
+      "version": "0.2.0",
+      "category": "development",
+      "keywords": [
+        "agents",
+        "core"
+      ]
+    },
+    {
+      "name": "agent-kit-rag",
+      "source": "./plugins/rag",
+      "description": "RAG specialists: architecture, OCR (Arabic/English), ingestion, hybrid retrieval with RRF, and evaluation.",
+      "version": "0.2.0",
+      "category": "ai",
+      "keywords": [
+        "agents",
+        "rag"
+      ]
+    },
+    {
+      "name": "agent-kit-chat",
+      "source": "./plugins/chat",
+      "description": "Chatbot design, OWASP-mapped guardrails, and Arabic–English localisation.",
+      "version": "0.2.0",
+      "category": "ai",
+      "keywords": [
+        "agents",
+        "chat"
+      ]
+    },
+    {
+      "name": "agent-kit-auc-library",
+      "source": "./plugins/auc-library",
+      "description": "AUC Libraries (Cairo) assistants: concierge, research, catalog, special collections, knowledge-base builder, library systems integration.",
+      "version": "0.2.0",
+      "category": "education",
+      "keywords": [
+        "agents",
+        "auc-library"
+      ]
+    }
+  ]
+}

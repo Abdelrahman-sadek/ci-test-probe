@@ -16,12 +16,16 @@ Every agent file is loaded into context on every turn it is active. A 300-line p
 | Handoffs | When to pass to another agent | 1–4 bullets |
 
 ## Checklist
-- [ ] `name` is kebab-case and equals the filename
+- [ ] File lives in `plugins/<division>/agents/` and `name` is kebab-case, equal to the filename
 - [ ] `description` starts with "Use when"
 - [ ] `tools` is least-privilege (read-only agents get no Write/Bash)
-- [ ] ≤ 120 lines (`scripts/lint-agents.sh` enforces)
+- [ ] `model` tier chosen on purpose (`haiku` high-volume, `sonnet` routine, `inherit` judgement); description ≤ 300 chars
+- [ ] ≤ 120 lines and a smoke test in `evals/agents/smoke.json` (`scripts/lint-agents.sh` enforces both)
 - [ ] No facts that can go stale inside the agent — put them in `knowledge/` and tell the agent to read/retrieve them
 - [ ] Domain facts the agent is unsure of are marked `[VERIFY]`
+
+## Measured cost
+`claude plugin details` reports the always-on cost of each division plugin: core ~347 tokens, rag ~325, chat ~209, auc-library ~424. That's the whole roster's routing cost per session.
 
 ## Cost levers
 - Use `model: haiku` for high-volume, low-judgement agents (FAQ, routing, classification).
